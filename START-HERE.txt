@@ -1,0 +1,37 @@
+RAPIDLAB: DEPLOY THIS FIXED VERSION TO VERCEL
+================================================
+
+1. SUPABASE DATABASE
+   - Open Supabase -> SQL Editor -> New query.
+   - Open the included file named supabase-setup.sql.
+   - Copy everything from that file into Supabase and click Run.
+
+2. REPLACE THE OLD GITHUB FILES
+   - Upload the contents of this ZIP to the same GitHub repository.
+   - Replace the old files when GitHub asks.
+   - Do not upload any password, API key, or .env.local file.
+
+3. VERCEL ENVIRONMENT VARIABLES
+   In Vercel -> Project -> Settings -> Environment Variables, add:
+
+   DATABASE_URL
+   SUPABASE_URL
+   SUPABASE_SERVICE_ROLE_KEY
+   SUPABASE_STORAGE_BUCKET     value: lab-reports
+   OTP_HASH_SECRET
+   BREVO_API_KEY
+   BREVO_SENDER_EMAIL
+
+   Apply every variable to Production, Preview, and Development.
+
+4. VERCEL BUILD SETTINGS
+   - Framework Preset: Next.js
+   - Build Command: npm run build (or leave Default)
+   - Output Directory: leave empty/default
+
+5. DEPLOY
+   - Vercel should deploy after the GitHub upload.
+   - If it does not, open Deployments -> three dots -> Redeploy.
+   - Wait for Ready, then click Visit.
+
+The Cloudflare-only build error has been removed from this version.
