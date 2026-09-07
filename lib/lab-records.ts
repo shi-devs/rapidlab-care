@@ -9,15 +9,31 @@ export const VALUE_KEYS = [
 export function cleanValues(raw: unknown) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const input = raw as Record<string, unknown>;
-  return Object.fromEntries(VALUE_KEYS.map((key) => [key, typeof input[key] === "string" ? input[key].trim().slice(0, 40) : ""]));
+  const fixedValues = Object.fromEntries(VALUE_KEYS.map((key) => [key, typeof input[key] === "string" ? input[key].trim().slice(0, 40) : ""]));
+  const additionalTests = Array.isArray(input.additionalTests)
+    ? input.additionalTests.slice(0, 200).flatMap((rawTest) => {
+      if (!rawTest || typeof rawTest !== "object" || Array.isArray(rawTest)) return [];
+      const test = rawTest as Record<string, unknown>;
+      const testName = typeof test.testName === "string" ? test.testName.trim().slice(0, 100) : "";
+      const value = typeof test.value === "string" ? test.value.trim().slice(0, 80) : "";
+      if (!testName || !value) return [];
+      return [{
+        testName,
+        value,
+        unit: typeof test.unit === "string" ? test.unit.trim().slice(0, 40) : "",
+        referenceRange: typeof test.referenceRange === "string" ? test.referenceRange.trim().slice(0, 80) : "",
+      }];
+    })
+    : [];
+  return { ...fixedValues, additionalTests };
 }
 
 export function serializeLabRecord(
   row: typeof labRecords.$inferSelect,
   storedReports: Array<typeof labReportFiles.$inferSelect> = [],
 ) {
-  let values: Record<string, string> = {};
-  try { values = JSON.parse(row.valuesJson) as Record<string, string>; } catch { values = {}; }
+  let values: Record<string, unknown> = {};
+  try { values = JSON.parse(row.valuesJson) as Record<string, unknown>; } catch { values = {}; }
 
   const reports = [
     ...(row.reportFileKey ? [{

@@ -42,7 +42,9 @@ const TESTS = [
 ] as const;
 
 type TestKey = (typeof TESTS)[number]["key"];
-type Values = Record<TestKey, string>;
+type AdditionalLabResult = { testName: string; value: string; unit: string; referenceRange: string };
+type AdditionalLabField = keyof AdditionalLabResult;
+type Values = Record<TestKey, string> & { additionalTests: AdditionalLabResult[] };
 type EntryMode = "manual" | "scan";
 type StaffRole = "nurse" | "doctor" | "admin" | "viewer";
 type MemberStatus = "pending" | "active" | "inactive";
@@ -59,7 +61,34 @@ type DeleteTarget = { type: "record"; record: PatientRecord } | { type: "report"
 
 const ROLE_LABELS: Record<StaffRole, string> = { nurse: "Nurse", doctor: "Doctor / Supervisor", admin: "Hospital Admin", viewer: "Read-only Viewer" };
 
-const blankValues = () => Object.fromEntries(TESTS.map((test) => [test.key, ""])) as Values;
+const blankValues = (): Values => ({
+  ...(Object.fromEntries(TESTS.map((test) => [test.key, ""])) as Record<TestKey, string>),
+  additionalTests: [],
+});
+
+function normalizeValues(raw?: Partial<Values>): Values {
+  const values = blankValues();
+  if (!raw) return values;
+  for (const test of TESTS) {
+    const rawValue = raw[test.key];
+    values[test.key] = typeof rawValue === "string" ? rawValue : "";
+  }
+  values.additionalTests = Array.isArray(raw.additionalTests)
+    ? raw.additionalTests.map((item) => ({
+      testName: typeof item?.testName === "string" ? item.testName : "",
+      value: typeof item?.value === "string" ? item.value : "",
+      unit: typeof item?.unit === "string" ? item.unit : "",
+      referenceRange: typeof item?.referenceRange === "string" ? item.referenceRange : "",
+    }))
+    : [];
+  return values;
+}
+
+function valueTotal(values?: Values) {
+  const normalized = normalizeValues(values);
+  return TESTS.filter((test) => normalized[test.key].trim()).length
+    + normalized.additionalTests.filter((test) => test.testName.trim() && test.value.trim()).length;
+}
 const reportTotal = (records: PatientRecord[]) => records.reduce((total, record) => total + record.reports.length, 0);
 
 function Logo({ inverse = false }: { inverse?: boolean }) {
@@ -331,7 +360,31 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
   }
 
   function startEdit(record: PatientRecord, preferredMode?: EntryMode) {
-    setEditingRecord(record); setEntryMode(preferredMode ?? (record.source === "Manual" ? "manual" : "scan")); setPatientName(record.name); setPatientAge(record.age); setValues(record.values); setReportFiles([]); setOcrText(""); setOcrProgress(null); setSelectedRecord(null); setEntryOpen(true);
+    setEditingRecord(record); setEntryMode(preferredMode ?? (record.source === "Manual" ? "manual" : "scan")); setPatientName(record.name); setPatientAge(record.age); setValues(normalizeValues(record.values)); setReportFiles([]); setOcrText(""); setOcrProgress(null); setSelectedRecord(null); setEntryOpen(true);
+  }
+
+  function addAdditionalTest() {
+    setValues((current) => {
+      const next = normalizeValues(current);
+      next.additionalTests.push({ testName: "", value: "", unit: "", referenceRange: "" });
+      return next;
+    });
+  }
+
+  function updateAdditionalTest(index: number, field: AdditionalLabField, value: string) {
+    setValues((current) => {
+      const next = normalizeValues(current);
+      next.additionalTests = next.additionalTests.map((test, itemIndex) => itemIndex === index ? { ...test, [field]: value } : test);
+      return next;
+    });
+  }
+
+  function removeAdditionalTest(index: number) {
+    setValues((current) => {
+      const next = normalizeValues(current);
+      next.additionalTests = next.additionalTests.filter((_, itemIndex) => itemIndex !== index);
+      return next;
+    });
   }
 
   async function readReports(selected?: FileList | null) {
@@ -359,10 +412,15 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
           const text = result.data.text || "";
           detectedText.push(`--- ${readableFiles[index].name} ---\n${text}`);
           const extracted = extractValues(text);
-          extractedCount += Object.values(extracted.values).filter(Boolean).length;
+          extractedCount += valueTotal(extracted.values);
           setValues((current) => {
-            const next = { ...current };
+            const next = normalizeValues(current);
             for (const test of TESTS) if (!next[test.key] && extracted.values[test.key]) next[test.key] = extracted.values[test.key];
+            for (const result of extracted.values.additionalTests) {
+              const existingIndex = next.additionalTests.findIndex((item) => normalizeTestName(item.testName) === normalizeTestName(result.testName));
+              if (existingIndex === -1) next.additionalTests.push(result);
+              else if (!next.additionalTests[existingIndex].value) next.additionalTests[existingIndex] = result;
+            }
             return next;
           });
           if (extracted.name) setPatientName((current) => current || extracted.name || "");
@@ -372,7 +430,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
       setOcrText((current) => [current, ...detectedText].filter(Boolean).join("\n\n"));
       setOcrProgress(100);
       if (failedCount === readableFiles.length) toast.info("The reports were added without extracted values. Add the patient details, then save them as they are.");
-      else if (!extractedCount) toast.info("The reports were added, but none of the 15 values were found. You can still save them with the patient details.");
+      else if (!extractedCount) toast.info("The reports were added, but no laboratory results could be extracted. You can still save them with the patient details.");
       else toast.success(`${files.length} report${files.length === 1 ? "" : "s"} added. ${extractedCount} value${extractedCount === 1 ? "" : "s"} extracted—please verify them.`);
     } catch { setOcrProgress(null); toast.info("The report reader could not start. The selected files are still ready to save without extracted values."); }
   }
@@ -524,29 +582,39 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
       </main>
     </SidebarInset>
     <Dialog open={entryOpen} onOpenChange={(open) => { setEntryOpen(open); if (!open) setEditingRecord(null); }}><DialogContent className="entry-dialog">
-      <DialogHeader><DialogTitle>{editingRecord ? `Edit ${editingRecord.id}` : "New laboratory record"}</DialogTitle><DialogDescription>{editingRecord ? "Changes are shared with the hospital and return the record to pending verification." : "Add the patient details and report. The record can be saved even when none of the 15 values is available."}</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>{editingRecord ? `Edit ${editingRecord.id}` : "New laboratory record"}</DialogTitle><DialogDescription>{editingRecord ? "Changes are shared with the hospital and return the record to pending verification." : "Add the patient details and report. The record can be saved even when no laboratory value is available."}</DialogDescription></DialogHeader>
       <Tabs value={entryMode} onValueChange={(value) => setEntryMode(value as EntryMode)}><TabsList className="entry-tabs"><TabsTrigger value="manual"><UserRound /> Manual entry</TabsTrigger><TabsTrigger value="scan"><FileScan /> Scan & upload</TabsTrigger></TabsList>
         <TabsContent value="manual"><p className="mode-note">Type only the values written on the patient’s report.</p></TabsContent>
         <TabsContent value="scan">{editingRecord?.reports.length ? <div className="existing-report-note"><FileImage /><span><strong>{editingRecord.reports.length} saved report{editingRecord.reports.length === 1 ? "" : "s"}</strong><small>They will remain attached. Add more images or PDFs below whenever the patient has another lab report.</small></span></div> : null}<div className="upload-zone">
           <input ref={cameraRef} className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => { void readReports(event.currentTarget.files); event.currentTarget.value = ""; }} />
           <input ref={uploadRef} className="sr-only" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" multiple onChange={(event) => { void readReports(event.currentTarget.files); event.currentTarget.value = ""; }} />
           <span><Camera /></span><div><strong>{reportFiles.length ? `${reportFiles.length} new report${reportFiles.length === 1 ? "" : "s"} selected` : "Scan or upload several lab reports"}</strong><p>Choose up to 8 JPG, PNG, WebP or PDF files totalling under 4 MB. Reports can be saved even when no lab values are extracted.</p></div><div><Button type="button" onClick={() => cameraRef.current?.click()}><Camera /> Scan another</Button><Button type="button" variant="outline" onClick={() => uploadRef.current?.click()}><Upload /> Upload multiple</Button></div>
-        </div>{reportFiles.length ? <div className="pending-report-list">{reportFiles.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`}><FileImage /><span><strong>{file.name}</strong><small>{(file.size / 1024 / 1024).toFixed(1)} MB · ready to save</small></span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setReportFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X /></button></div>)}</div> : null}{ocrProgress !== null && <div className="ocr-progress"><span style={{ width: `${ocrProgress}%` }} /><p>{ocrProgress < 100 ? <><LoaderCircle className="spin" /> Reading reports… {ocrProgress}%</> : <><Check /> Extraction complete — verify the 15 fields below</>}</p></div>}{ocrText && <details className="ocr-raw"><summary>View detected report text</summary><pre>{ocrText}</pre></details>}</TabsContent>
+        </div>{reportFiles.length ? <div className="pending-report-list">{reportFiles.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`}><FileImage /><span><strong>{file.name}</strong><small>{(file.size / 1024 / 1024).toFixed(1)} MB · ready to save</small></span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setReportFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X /></button></div>)}</div> : null}{ocrProgress !== null && <div className="ocr-progress"><span style={{ width: `${ocrProgress}%` }} /><p>{ocrProgress < 100 ? <><LoaderCircle className="spin" /> Reading reports… {ocrProgress}%</> : <><Check /> Extraction complete — verify all results below</>}</p></div>}{ocrText && <details className="ocr-raw"><summary>View detected report text</summary><pre>{ocrText}</pre></details>}</TabsContent>
       </Tabs>
       <div className="patient-fields"><Field label="Patient name" value={patientName} onChange={setPatientName} placeholder="Enter or verify patient name" /><Field label="Age (years)" value={patientAge} onChange={setPatientAge} placeholder="Enter or verify age" /></div>
       <div className="lab-grid" aria-label="Laboratory values">{TESTS.map((test) => <label className="lab-field" key={test.key}><span>{test.label}<small>{test.unit}</small></span><Input inputMode="decimal" value={values[test.key]} onChange={(event) => setValues((current) => ({ ...current, [test.key]: event.target.value }))} placeholder="Blank" /></label>)}</div>
+      <section className="additional-tests" aria-label="Additional laboratory results">
+        <div className="additional-tests-head"><div><h3>Other laboratory results</h3><p>Results not included in the common fields are added here automatically. You can also add one manually.</p></div><Button type="button" variant="outline" onClick={addAdditionalTest}><Plus /> Add test</Button></div>
+        {values.additionalTests.length ? <div className="additional-test-list">{values.additionalTests.map((test, index) => <div className="additional-test-row" key={`${test.testName}-${index}`}>
+          <label><span>Test name</span><Input value={test.testName} onChange={(event) => updateAdditionalTest(index, "testName", event.target.value)} placeholder="Example: TSH" /></label>
+          <label><span>Result</span><Input value={test.value} onChange={(event) => updateAdditionalTest(index, "value", event.target.value)} placeholder="Value" /></label>
+          <label><span>Unit</span><Input value={test.unit} onChange={(event) => updateAdditionalTest(index, "unit", event.target.value)} placeholder="Unit" /></label>
+          <label><span>Reference range</span><Input value={test.referenceRange} onChange={(event) => updateAdditionalTest(index, "referenceRange", event.target.value)} placeholder="Range" /></label>
+          <button className="remove-additional-test" type="button" aria-label={`Remove ${test.testName || "additional test"}`} onClick={() => removeAdditionalTest(index)}><Trash2 /></button>
+        </div>)}</div> : <p className="additional-tests-empty">No other results added.</p>}
+      </section>
       <div className="entry-actions"><p><ShieldCheck /> Doctor or supervisor verification is required after submission.</p><div><Button variant="outline" onClick={() => setEntryOpen(false)} disabled={saving}>Cancel</Button><Button onClick={saveRecord} disabled={saving}>{saving && <LoaderCircle className="spin" />}{saving ? "Saving…" : editingRecord ? "Save changes" : "Share with hospital"}</Button></div></div>
     </DialogContent></Dialog>
     <Dialog open={Boolean(selectedRecord)} onOpenChange={(open) => { if (!open) setSelectedRecord(null); }}><DialogContent className="record-dialog">
       {selectedRecord && <>
         <DialogHeader><DialogTitle>{selectedRecord.name}</DialogTitle><DialogDescription>{selectedRecord.id} · {selectedRecord.age ? `${selectedRecord.age} years` : "Age not entered"} · {new Date(selectedRecord.createdAt).toLocaleString()}</DialogDescription></DialogHeader>
         <div className="record-summary"><span><strong>Entry method</strong>{selectedRecord.source}</span><span><strong>Status</strong><b className={`record-status ${selectedRecord.status}`}>{selectedRecord.status === "verified" ? "Verified" : "Pending verification"}</b></span><span><strong>Created by</strong>{selectedRecord.createdByEmail || "Hospital staff"}</span><span><strong>Last updated</strong>{new Date(selectedRecord.updatedAt).toLocaleString()}</span></div>
-        <div className="record-values">{TESTS.map((test) => <div key={test.key}><span>{test.label}<small>{test.unit}</small></span><strong>{selectedRecord.values[test.key] || "—"}</strong></div>)}</div>
+        <div className="record-values">{TESTS.map((test) => <div key={test.key}><span>{test.label}<small>{test.unit}</small></span><strong>{selectedRecord.values[test.key] || "—"}</strong></div>)}{(selectedRecord.values.additionalTests ?? []).map((test, index) => <div key={`${test.testName}-${index}`}><span>{test.testName}<small>{[test.unit, test.referenceRange ? `Range: ${test.referenceRange}` : ""].filter(Boolean).join(" · ")}</small></span><strong>{test.value || "—"}</strong></div>)}</div>
         <section className="report-collection"><div className="report-collection-head"><div><FileImage /><span><strong>Patient lab reports</strong><small>{selectedRecord.reports.length ? `${selectedRecord.reports.length} saved file${selectedRecord.reports.length === 1 ? "" : "s"}` : "No reports attached"}</small></span></div>{role !== "viewer" && <Button variant="outline" size="sm" onClick={() => startEdit(selectedRecord, "scan")}><Plus /> Add reports</Button>}</div>{selectedRecord.reports.length ? <div className="saved-report-list">{selectedRecord.reports.map((report, index) => <div key={report.id}><span><FileCheck2 /><strong>Report {index + 1}</strong><small>{report.fileName} · {new Date(report.uploadedAt).toLocaleString()}</small></span><div className="saved-report-actions"><Button asChild size="sm"><a href={report.url} target="_blank" rel="noreferrer">Open <ExternalLink /></a></Button>{role !== "viewer" && <Button variant="destructive" size="sm" className="remove-staff-button" aria-label={`Delete ${report.fileName}`} onClick={() => setDeleteTarget({ type: "report", record: selectedRecord, report })}><Trash2 /> Delete</Button>}</div></div>)}</div> : <p className="no-report-copy">Use “Add reports” to attach the patient’s lab report images or PDFs.</p>}</section>
         <div className="record-dialog-actions">{role !== "viewer" && <Button variant="destructive" className="record-delete-button" onClick={() => setDeleteTarget({ type: "record", record: selectedRecord })}><Trash2 /> Delete patient record</Button>}{role !== "viewer" && <Button variant="outline" onClick={() => startEdit(selectedRecord)}><Pencil /> Edit patient details</Button>}{(role === "doctor" || role === "admin") && selectedRecord.status === "pending" && <Button onClick={() => verifyRecord(selectedRecord)} disabled={verifying}>{verifying ? <LoaderCircle className="spin" /> : <ClipboardCheck />} Verify record</Button>}</div>
       </>}
     </DialogContent></Dialog>
-    <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open && !deletingTarget) setDeleteTarget(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{deleteTarget?.type === "record" ? "Delete this patient record?" : "Delete this lab report?"}</AlertDialogTitle><AlertDialogDescription>{deleteTarget?.type === "record" ? `This permanently deletes ${deleteTarget.record.name} (${deleteTarget.record.id}), all 15 lab values, and ${deleteTarget.record.reports.length} uploaded report file${deleteTarget.record.reports.length === 1 ? "" : "s"}. The deletion itself remains in hospital activity history.` : `This permanently deletes ${deleteTarget?.report.fileName}. The patient record and its other reports will remain available, and the record will return to pending verification.`}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deletingTarget}>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deletingTarget} onClick={(event) => { event.preventDefault(); void confirmDeleteTarget(); }}>{deletingTarget ? <LoaderCircle className="spin" /> : <Trash2 />}{deletingTarget ? "Deleting…" : deleteTarget?.type === "record" ? "Delete patient permanently" : "Delete report permanently"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog><Toaster position="top-center" />
+    <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open && !deletingTarget) setDeleteTarget(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{deleteTarget?.type === "record" ? "Delete this patient record?" : "Delete this lab report?"}</AlertDialogTitle><AlertDialogDescription>{deleteTarget?.type === "record" ? `This permanently deletes ${deleteTarget.record.name} (${deleteTarget.record.id}), all saved lab values, and ${deleteTarget.record.reports.length} uploaded report file${deleteTarget.record.reports.length === 1 ? "" : "s"}. The deletion itself remains in hospital activity history.` : `This permanently deletes ${deleteTarget?.report.fileName}. The patient record and its other reports will remain available, and the record will return to pending verification.`}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deletingTarget}>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deletingTarget} onClick={(event) => { event.preventDefault(); void confirmDeleteTarget(); }}>{deletingTarget ? <LoaderCircle className="spin" /> : <Trash2 />}{deletingTarget ? "Deleting…" : deleteTarget?.type === "record" ? "Delete patient permanently" : "Delete report permanently"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog><Toaster position="top-center" />
   </SidebarProvider>;
 }
 
@@ -625,7 +693,7 @@ function PatientsWorkspace({ records, search, onSearch, canCreate, onNew, onView
 function EmergencyWorkspace({ records, onManual, onScan, onView }: { records: PatientRecord[]; onManual: () => void; onScan: () => void; onView: (record: PatientRecord) => void }) {
   return <div className="workspace-page emergency-view">
     <PageHeading eyebrow="Rapid intake" title="Emergency Admissions" description="Choose the fastest entry method for the report in front of you."><span className="live-badge"><i /> Ready for intake</span></PageHeading>
-    <section className="intake-actions"><button onClick={onManual}><span className="action-icon manual"><UserRound /></span><div><small>Option 01</small><h2>Manual entry</h2><p>Open a completely blank 15-value form for handwritten reports.</p></div><ArrowRight /></button><button onClick={onScan}><span className="action-icon scan"><FileScan /></span><div><small>Option 02</small><h2>Scan or upload</h2><p>Photograph a report, extract its values, then verify every field.</p></div><ArrowRight /></button></section>
+    <section className="intake-actions"><button onClick={onManual}><span className="action-icon manual"><UserRound /></span><div><small>Option 01</small><h2>Manual entry</h2><p>Open a blank form for any handwritten laboratory report.</p></div><ArrowRight /></button><button onClick={onScan}><span className="action-icon scan"><FileScan /></span><div><small>Option 02</small><h2>Scan or upload</h2><p>Photograph a report, extract its values, then verify every field.</p></div><ArrowRight /></button></section>
     <section className="workflow-strip"><div><span>1</span><strong>Choose method</strong><small>Manual or image</small></div><i /><div><span>2</span><strong>Capture values</strong><small>No fixed entries</small></div><i /><div><span>3</span><strong>Verify & save</strong><small>Human confirmation</small></div></section>
     <section className="emergency-queue"><div className="section-title"><div><h2>Current emergency queue</h2><p>Recently submitted admissions across your hospital.</p></div><strong>{records.length} total</strong></div>
       {records.length ? <div className="admission-list">{records.slice(0, 8).map((record, index) => <article key={record.recordId || record.id}><span className="queue-number">{String(index + 1).padStart(2, "0")}</span><PatientCell record={record} /><span className="admission-time"><Clock3 />{new Date(record.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><span className="source-pill">{record.source}</span><Button variant="ghost" onClick={() => onView(record)}>Review <ArrowRight /></Button></article>)}</div> : <div className="simple-empty"><Zap /><h3>Queue is clear</h3><p>New emergency entries will appear here.</p></div>}
@@ -637,7 +705,7 @@ function HistoryWorkspace({ records, filter, onFilter, onView }: { records: Pati
   return <div className="workspace-page history-view">
     <PageHeading eyebrow="Saved archive" title="Record History" description="Review past entries and reopen their attached lab reports."><CalendarDays /></PageHeading>
     <Tabs value={filter} onValueChange={(value) => onFilter(value as "all" | "scan" | "manual")}><div className="history-toolbar"><TabsList><TabsTrigger value="all">All records</TabsTrigger><TabsTrigger value="scan">Scanned</TabsTrigger><TabsTrigger value="manual">Manual</TabsTrigger></TabsList><span>{records.length} result{records.length === 1 ? "" : "s"}</span></div></Tabs>
-    {records.length ? <section className="history-timeline">{records.map((record) => <article key={record.recordId || record.id}><div className="history-date"><strong>{new Date(record.createdAt).toLocaleDateString([], { day: "2-digit" })}</strong><span>{new Date(record.createdAt).toLocaleDateString([], { month: "short", year: "numeric" })}</span></div><div className="history-line"><i /></div><div className="history-card"><div><PatientCell record={record} /><span className="history-meta">{record.source} · {Object.values(record.values).filter(Boolean).length} values · {record.createdByEmail || "Hospital staff"}</span></div><div className="history-actions"><span className={`record-status ${record.status}`}>{record.status}</span>{record.reports.length > 0 && <span><FileCheck2 /> {record.reports.length} report{record.reports.length === 1 ? "" : "s"}</span>}<Button variant="outline" size="sm" onClick={() => onView(record)}>View record</Button></div></div></article>)}</section> : <div className="history-empty"><History /><h3>No records in this category</h3><p>Choose another history filter.</p></div>}
+    {records.length ? <section className="history-timeline">{records.map((record) => <article key={record.recordId || record.id}><div className="history-date"><strong>{new Date(record.createdAt).toLocaleDateString([], { day: "2-digit" })}</strong><span>{new Date(record.createdAt).toLocaleDateString([], { month: "short", year: "numeric" })}</span></div><div className="history-line"><i /></div><div className="history-card"><div><PatientCell record={record} /><span className="history-meta">{record.source} · {valueTotal(record.values)} values · {record.createdByEmail || "Hospital staff"}</span></div><div className="history-actions"><span className={`record-status ${record.status}`}>{record.status}</span>{record.reports.length > 0 && <span><FileCheck2 /> {record.reports.length} report{record.reports.length === 1 ? "" : "s"}</span>}<Button variant="outline" size="sm" onClick={() => onView(record)}>View record</Button></div></div></article>)}</section> : <div className="history-empty"><History /><h3>No records in this category</h3><p>Choose another history filter.</p></div>}
   </div>;
 }
 
@@ -688,15 +756,51 @@ function Metric({ icon: Icon, label, value, note, tone }: { icon: typeof UsersRo
   return <article className="metric-card"><span className={`metric-icon ${tone}`}><Icon /></span><div><p>{label}</p><strong>{value}</strong><small>{note}</small></div></article>;
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeTestName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 function extractValues(text: string): { values: Values; name?: string; age?: string } {
-  const values = blankValues(); const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const values = blankValues();
+  const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const numericResult = "([<>]?\\s*[-+]?(?:\\d+(?:[.,]\\d+)?|\\.\\d+))";
+
   for (const test of TESTS) {
-    const alias = [...test.aliases].sort((a, b) => b.length - a.length).find((candidate) => lines.some((line) => line.toLowerCase().includes(candidate.toLowerCase())));
-    if (!alias) continue; const line = lines.find((item) => item.toLowerCase().includes(alias.toLowerCase())); if (!line) continue;
-    const start = line.toLowerCase().indexOf(alias.toLowerCase()) + alias.length; const afterLabel = line.slice(start).replace(/^[\s:=-]+/, ""); const number = afterLabel.match(/[-+]?\d+(?:[.,]\d+)?/);
-    if (number) values[test.key] = number[0].replace(",", ".");
+    for (const alias of [...test.aliases].sort((a, b) => b.length - a.length)) {
+      const match = lines.map((line) => line.match(new RegExp(`^\\s*${escapeRegExp(alias)}\\s*(?:[:=\\-]\\s*)?${numericResult}(?:\\s|$)`, "i"))).find(Boolean);
+      if (match?.[1]) { values[test.key] = match[1].replace(/\s/g, "").replace(",", "."); break; }
+    }
   }
-  const nameLine = lines.find((line) => /(?:patient\s*name|name)\s*[:\-]/i.test(line)); const ageLine = lines.find((line) => /\bage\s*[:\-]/i.test(line));
+
+  const ignoredLine = /\b(patient|age|sex|gender|date|time|sample|specimen|doctor|hospital|address|phone|mobile|email|invoice|bill|report\s*(?:id|no)|laboratory|reference\s*range|test\s*name)\b/i;
+  const rowPattern = /^(.{2,80}?)(?:\s*[:=]\s*|\s+)([<>]?\s*[-+]?(?:\d+(?:[.,]\d+)?|\.\d+)|positive|negative|reactive|non[- ]reactive|detected|not detected|present|absent)(?:\s+(.*))?$/i;
+  const rangePattern = /((?:[-+]?(?:\d+(?:[.,]\d+)?|\.\d+)\s*(?:-|–|—|to)\s*[-+]?(?:\d+(?:[.,]\d+)?|\.\d+))|(?:[<>]=?\s*[-+]?(?:\d+(?:[.,]\d+)?|\.\d+)))\s*$/i;
+  const knownNames = new Set(TESTS.flatMap((test) => [test.label, ...test.aliases].map(normalizeTestName)));
+  const seen = new Set<string>();
+
+  for (const line of lines) {
+    if (ignoredLine.test(line)) continue;
+    const match = line.match(rowPattern);
+    if (!match) continue;
+    const testName = match[1].replace(/^[•*#\-\d.)\s]+/, "").replace(/[.:=\-\s]+$/, "").trim();
+    const normalizedName = normalizeTestName(testName);
+    if (testName.length < 2 || knownNames.has(normalizedName) || seen.has(normalizedName)) continue;
+
+    const value = match[2].replace(/\s/g, "").replace(",", ".");
+    const tail = (match[3] ?? "").replace(/\s+(?:H|L|HIGH|LOW|ABNORMAL|\*)$/i, "").trim();
+    const rangeMatch = tail.match(rangePattern);
+    const referenceRange = rangeMatch?.[1]?.replace(/\s+/g, " ") ?? "";
+    const unit = (rangeMatch ? tail.slice(0, rangeMatch.index) : tail).replace(/^[,;:()\s]+|[,;:()\s]+$/g, "").slice(0, 30);
+    values.additionalTests.push({ testName, value, unit, referenceRange });
+    seen.add(normalizedName);
+  }
+
+  const nameLine = lines.find((line) => /(?:patient\s*name|name)\s*[:\-]/i.test(line));
+  const ageLine = lines.find((line) => /\bage\s*[:\-]/i.test(line));
   return { values, name: nameLine?.replace(/^.*?(?:patient\s*name|name)\s*[:\-]\s*/i, "").trim(), age: ageLine?.match(/\bage\s*[:\-]?\s*(\d{1,3})/i)?.[1] };
 }
 
