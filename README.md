@@ -21,7 +21,7 @@ RapidLab Care simplifies this process by allowing authorised staff to upload mul
 * Create or join a hospital workspace
 * Add and manage patient records
 * Upload multiple lab-report images or PDF files
-* OCR-assisted extraction of common laboratory values
+* OCR-assisted extraction of laboratory values
 * Review and correct extracted values before saving
 * Save a report even when no laboratory value is extracted
 * Store reports using the patient’s name, age, date and hospital
