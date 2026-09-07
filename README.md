@@ -2,7 +2,7 @@
 
 **Scan Fast. Store Safely. Care Better.**
 
-RapidLab is an emergency laboratory record-management system designed to help hospital staff upload, scan, verify and manage patient lab reports in one secure portal.
+RapidLab is an laboratory record-management system designed to help hospital staff upload, scan, verify and manage patient lab reports in one secure portal.
 
 ## Live Website
 
