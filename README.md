@@ -1,4 +1,4 @@
-# RapidLab Emergency Records
+# RapidLab Care
 
 **Scan Fast. Store Safely. Care Better.**
 
@@ -10,9 +10,11 @@ RapidLab is an emergency laboratory record-management system designed to help ho
 
 ## About the Project
 
-During emergency admissions, nurses may receive several paper lab reports containing many values. Entering every value manually takes time, can cause typing mistakes and reduces the attention available for patient care.
+RapidLab Care is a web-based laboratory record-management system designed to help hospitals, clinics and diagnostic centres upload, scan, verify and manage patient lab reports in one organised portal.
 
-RapidLab makes this process easier by allowing hospital staff to scan or upload multiple reports, review extracted information and save everything under the correct patient and hospital record.
+Hospital staff may receive several paper lab reports containing many different values. Entering every value manually takes time, can cause typing mistakes and makes previous reports difficult to find.
+
+RapidLab Care simplifies this process by allowing authorised staff to upload multiple reports, review extracted information and save everything under the correct patient and hospital record.
 
 ## Main Features
 
