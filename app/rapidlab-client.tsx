@@ -69,25 +69,35 @@ const blankValues = (): Values => ({
 function normalizeValues(raw?: Partial<Values>): Values {
   const values = blankValues();
   if (!raw) return values;
+
+  const results: AdditionalLabResult[] = [];
   for (const test of TESTS) {
     const rawValue = raw[test.key];
-    values[test.key] = typeof rawValue === "string" ? rawValue : "";
+    if (typeof rawValue === "string" && rawValue.trim()) {
+      results.push({ testName: test.label, value: rawValue, unit: test.unit, referenceRange: "" });
+    }
   }
-  values.additionalTests = Array.isArray(raw.additionalTests)
-    ? raw.additionalTests.map((item) => ({
+
+  if (Array.isArray(raw.additionalTests)) {
+    for (const item of raw.additionalTests) {
+      const result = {
       testName: typeof item?.testName === "string" ? item.testName : "",
       value: typeof item?.value === "string" ? item.value : "",
       unit: typeof item?.unit === "string" ? item.unit : "",
       referenceRange: typeof item?.referenceRange === "string" ? item.referenceRange : "",
-    }))
-    : [];
+      };
+      const existingIndex = results.findIndex((saved) => normalizeTestName(saved.testName) === normalizeTestName(result.testName));
+      if (existingIndex === -1) results.push(result);
+      else results[existingIndex] = { ...results[existingIndex], ...result };
+    }
+  }
+
+  values.additionalTests = results;
   return values;
 }
 
 function valueTotal(values?: Values) {
-  const normalized = normalizeValues(values);
-  return TESTS.filter((test) => normalized[test.key].trim()).length
-    + normalized.additionalTests.filter((test) => test.testName.trim() && test.value.trim()).length;
+  return normalizeValues(values).additionalTests.filter((test) => test.testName.trim() && test.value.trim()).length;
 }
 const reportTotal = (records: PatientRecord[]) => records.reduce((total, record) => total + record.reports.length, 0);
 
@@ -415,7 +425,6 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
           extractedCount += valueTotal(extracted.values);
           setValues((current) => {
             const next = normalizeValues(current);
-            for (const test of TESTS) if (!next[test.key] && extracted.values[test.key]) next[test.key] = extracted.values[test.key];
             for (const result of extracted.values.additionalTests) {
               const existingIndex = next.additionalTests.findIndex((item) => normalizeTestName(item.testName) === normalizeTestName(result.testName));
               if (existingIndex === -1) next.additionalTests.push(result);
@@ -592,16 +601,15 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
         </div>{reportFiles.length ? <div className="pending-report-list">{reportFiles.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`}><FileImage /><span><strong>{file.name}</strong><small>{(file.size / 1024 / 1024).toFixed(1)} MB · ready to save</small></span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setReportFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X /></button></div>)}</div> : null}{ocrProgress !== null && <div className="ocr-progress"><span style={{ width: `${ocrProgress}%` }} /><p>{ocrProgress < 100 ? <><LoaderCircle className="spin" /> Reading reports… {ocrProgress}%</> : <><Check /> Extraction complete — verify all results below</>}</p></div>}{ocrText && <details className="ocr-raw"><summary>View detected report text</summary><pre>{ocrText}</pre></details>}</TabsContent>
       </Tabs>
       <div className="patient-fields"><Field label="Patient name" value={patientName} onChange={setPatientName} placeholder="Enter or verify patient name" /><Field label="Age (years)" value={patientAge} onChange={setPatientAge} placeholder="Enter or verify age" /></div>
-      <div className="lab-grid" aria-label="Laboratory values">{TESTS.map((test) => <label className="lab-field" key={test.key}><span>{test.label}<small>{test.unit}</small></span><Input inputMode="decimal" value={values[test.key]} onChange={(event) => setValues((current) => ({ ...current, [test.key]: event.target.value }))} placeholder="Blank" /></label>)}</div>
       <section className="additional-tests" aria-label="Additional laboratory results">
-        <div className="additional-tests-head"><div><h3>Other laboratory results</h3><p>Results not included in the common fields are added here automatically. You can also add one manually.</p></div><Button type="button" variant="outline" onClick={addAdditionalTest}><Plus /> Add test</Button></div>
+        <div className="additional-tests-head"><div><h3>Laboratory results</h3><p>Only tests found in the uploaded report appear here. Check the results, or add another test manually.</p></div><Button type="button" variant="outline" onClick={addAdditionalTest}><Plus /> Add test</Button></div>
         {values.additionalTests.length ? <div className="additional-test-list">{values.additionalTests.map((test, index) => <div className="additional-test-row" key={`${test.testName}-${index}`}>
           <label><span>Test name</span><Input value={test.testName} onChange={(event) => updateAdditionalTest(index, "testName", event.target.value)} placeholder="Example: TSH" /></label>
           <label><span>Result</span><Input value={test.value} onChange={(event) => updateAdditionalTest(index, "value", event.target.value)} placeholder="Value" /></label>
           <label><span>Unit</span><Input value={test.unit} onChange={(event) => updateAdditionalTest(index, "unit", event.target.value)} placeholder="Unit" /></label>
           <label><span>Reference range</span><Input value={test.referenceRange} onChange={(event) => updateAdditionalTest(index, "referenceRange", event.target.value)} placeholder="Range" /></label>
           <button className="remove-additional-test" type="button" aria-label={`Remove ${test.testName || "additional test"}`} onClick={() => removeAdditionalTest(index)}><Trash2 /></button>
-        </div>)}</div> : <p className="additional-tests-empty">No other results added.</p>}
+        </div>)}</div> : <p className="additional-tests-empty">No laboratory results yet. Upload a report or select “Add test”.</p>}
       </section>
       <div className="entry-actions"><p><ShieldCheck /> Doctor or supervisor verification is required after submission.</p><div><Button variant="outline" onClick={() => setEntryOpen(false)} disabled={saving}>Cancel</Button><Button onClick={saveRecord} disabled={saving}>{saving && <LoaderCircle className="spin" />}{saving ? "Saving…" : editingRecord ? "Save changes" : "Share with hospital"}</Button></div></div>
     </DialogContent></Dialog>
@@ -609,7 +617,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
       {selectedRecord && <>
         <DialogHeader><DialogTitle>{selectedRecord.name}</DialogTitle><DialogDescription>{selectedRecord.id} · {selectedRecord.age ? `${selectedRecord.age} years` : "Age not entered"} · {new Date(selectedRecord.createdAt).toLocaleString()}</DialogDescription></DialogHeader>
         <div className="record-summary"><span><strong>Entry method</strong>{selectedRecord.source}</span><span><strong>Status</strong><b className={`record-status ${selectedRecord.status}`}>{selectedRecord.status === "verified" ? "Verified" : "Pending verification"}</b></span><span><strong>Created by</strong>{selectedRecord.createdByEmail || "Hospital staff"}</span><span><strong>Last updated</strong>{new Date(selectedRecord.updatedAt).toLocaleString()}</span></div>
-        <div className="record-values">{TESTS.map((test) => <div key={test.key}><span>{test.label}<small>{test.unit}</small></span><strong>{selectedRecord.values[test.key] || "—"}</strong></div>)}{(selectedRecord.values.additionalTests ?? []).map((test, index) => <div key={`${test.testName}-${index}`}><span>{test.testName}<small>{[test.unit, test.referenceRange ? `Range: ${test.referenceRange}` : ""].filter(Boolean).join(" · ")}</small></span><strong>{test.value || "—"}</strong></div>)}</div>
+        <div className="record-values">{normalizeValues(selectedRecord.values).additionalTests.map((test, index) => <div key={`${test.testName}-${index}`}><span>{test.testName}<small>{[test.unit, test.referenceRange ? `Range: ${test.referenceRange}` : ""].filter(Boolean).join(" · ")}</small></span><strong>{test.value || "—"}</strong></div>)}</div>
         <section className="report-collection"><div className="report-collection-head"><div><FileImage /><span><strong>Patient lab reports</strong><small>{selectedRecord.reports.length ? `${selectedRecord.reports.length} saved file${selectedRecord.reports.length === 1 ? "" : "s"}` : "No reports attached"}</small></span></div>{role !== "viewer" && <Button variant="outline" size="sm" onClick={() => startEdit(selectedRecord, "scan")}><Plus /> Add reports</Button>}</div>{selectedRecord.reports.length ? <div className="saved-report-list">{selectedRecord.reports.map((report, index) => <div key={report.id}><span><FileCheck2 /><strong>Report {index + 1}</strong><small>{report.fileName} · {new Date(report.uploadedAt).toLocaleString()}</small></span><div className="saved-report-actions"><Button asChild size="sm"><a href={report.url} target="_blank" rel="noreferrer">Open <ExternalLink /></a></Button>{role !== "viewer" && <Button variant="destructive" size="sm" className="remove-staff-button" aria-label={`Delete ${report.fileName}`} onClick={() => setDeleteTarget({ type: "report", record: selectedRecord, report })}><Trash2 /> Delete</Button>}</div></div>)}</div> : <p className="no-report-copy">Use “Add reports” to attach the patient’s lab report images or PDFs.</p>}</section>
         <div className="record-dialog-actions">{role !== "viewer" && <Button variant="destructive" className="record-delete-button" onClick={() => setDeleteTarget({ type: "record", record: selectedRecord })}><Trash2 /> Delete patient record</Button>}{role !== "viewer" && <Button variant="outline" onClick={() => startEdit(selectedRecord)}><Pencil /> Edit patient details</Button>}{(role === "doctor" || role === "admin") && selectedRecord.status === "pending" && <Button onClick={() => verifyRecord(selectedRecord)} disabled={verifying}>{verifying ? <LoaderCircle className="spin" /> : <ClipboardCheck />} Verify record</Button>}</div>
       </>}
@@ -756,42 +764,36 @@ function Metric({ icon: Icon, label, value, note, tone }: { icon: typeof UsersRo
   return <article className="metric-card"><span className={`metric-icon ${tone}`}><Icon /></span><div><p>{label}</p><strong>{value}</strong><small>{note}</small></div></article>;
 }
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function normalizeTestName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function normalizeExtractedValue(rawValue: string) {
+  const compact = rawValue.replace(/\s/g, "");
+  if (/^(?:positive|negative|reactive|non-reactive|nonreactive|detected|notdetected|present|absent)$/i.test(compact)) return compact;
+  if (/^[<>]?[-+]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(compact)) return compact.replace(/,/g, "");
+  return compact.replace(",", ".");
 }
 
 function extractValues(text: string): { values: Values; name?: string; age?: string } {
   const values = blankValues();
   const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
-  const numericResult = "([<>]?\\s*[-+]?(?:\\d+(?:[.,]\\d+)?|\\.\\d+))";
-
-  for (const test of TESTS) {
-    for (const alias of [...test.aliases].sort((a, b) => b.length - a.length)) {
-      const match = lines.map((line) => line.match(new RegExp(`^\\s*${escapeRegExp(alias)}\\s*(?:[:=\\-]\\s*)?${numericResult}(?:\\s|$)`, "i"))).find(Boolean);
-      if (match?.[1]) { values[test.key] = match[1].replace(/\s/g, "").replace(",", "."); break; }
-    }
-  }
 
   const ignoredLine = /\b(patient|age|sex|gender|date|time|sample|specimen|doctor|hospital|address|phone|mobile|email|invoice|bill|report\s*(?:id|no)|laboratory|reference\s*range|test\s*name)\b/i;
-  const rowPattern = /^(.{2,80}?)(?:\s*[:=]\s*|\s+)([<>]?\s*[-+]?(?:\d+(?:[.,]\d+)?|\.\d+)|positive|negative|reactive|non[- ]reactive|detected|not detected|present|absent)(?:\s+(.*))?$/i;
+  const rowPattern = /^(.{2,80}?)(?:\s*[:=]\s*|\s+)([<>]?\s*[-+]?(?:\d[\d,.]*|\.\d+)|positive|negative|reactive|non[- ]reactive|detected|not detected|present|absent)(?:\s+(.*))?$/i;
   const rangePattern = /((?:[-+]?(?:\d+(?:[.,]\d+)?|\.\d+)\s*(?:-|–|—|to)\s*[-+]?(?:\d+(?:[.,]\d+)?|\.\d+))|(?:[<>]=?\s*[-+]?(?:\d+(?:[.,]\d+)?|\.\d+)))\s*$/i;
-  const knownNames = new Set(TESTS.flatMap((test) => [test.label, ...test.aliases].map(normalizeTestName)));
   const seen = new Set<string>();
 
   for (const line of lines) {
     if (ignoredLine.test(line)) continue;
     const match = line.match(rowPattern);
     if (!match) continue;
-    const testName = match[1].replace(/^[•*#\-\d.)\s]+/, "").replace(/[.:=\-\s]+$/, "").trim();
+    const testName = match[1].replace(/^(?:[•*#-]\s*|\d+[.)]\s+)/, "").replace(/[.:=\-\s]+$/, "").trim();
     const normalizedName = normalizeTestName(testName);
-    if (testName.length < 2 || knownNames.has(normalizedName) || seen.has(normalizedName)) continue;
+    if (testName.length < 2 || seen.has(normalizedName)) continue;
 
-    const value = match[2].replace(/\s/g, "").replace(",", ".");
-    const tail = (match[3] ?? "").replace(/\s+(?:H|L|HIGH|LOW|ABNORMAL|\*)$/i, "").trim();
+    const value = normalizeExtractedValue(match[2]);
+    const tail = (match[3] ?? "").replace(/\s+(?:H|L|HIGH|LOW|ABNORMAL|REVIEW|\*)$/i, "").trim();
     const rangeMatch = tail.match(rangePattern);
     const referenceRange = rangeMatch?.[1]?.replace(/\s+/g, " ") ?? "";
     const unit = (rangeMatch ? tail.slice(0, rangeMatch.index) : tail).replace(/^[,;:()\s]+|[,;:()\s]+$/g, "").slice(0, 30);
