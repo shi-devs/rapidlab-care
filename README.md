@@ -65,14 +65,13 @@ RapidLab Care aims to reduce:
 
 ## Technology Used
 
-* Next.js
-* TypeScript
-* PostgreSQL
-* Supabase Database
-* Private Supabase Storage
-* Drizzle ORM
-* Vercel
-
+- **Next.js** – Builds the website and server functions
+- **TypeScript** – Programming language used for the application
+- **Supabase PostgreSQL** – Stores accounts, hospitals, patients and report details
+- **Supabase Storage** – Privately stores uploaded lab-report images and PDF files
+- **Drizzle ORM** – Connects the application to the database
+- **Vercel** – Hosts and publishes the website online
+  
 ## Team
 
 * Shishir
