@@ -69,7 +69,7 @@ RapidLab aims to reduce:
 * Drizzle ORM
 * Vercel deployment
 
-##Team 
+## Team 
 
 * Shishir
 * Shristi
