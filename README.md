@@ -4,6 +4,10 @@
 
 RapidLab is an emergency laboratory record-management system designed to help hospital staff upload, scan, verify and manage patient lab reports in one secure portal.
 
+## Live Website
+
+🌐 https://rapidlab-care.vercel.app/
+
 ## About the Project
 
 During emergency admissions, nurses may receive several paper lab reports containing many values. Entering every value manually takes time, can cause typing mistakes and reduces the attention available for patient care.
