@@ -1,70 +1,84 @@
-# RapidLab Emergency Records — Vercel edition
+# RapidLab Emergency Records
 
-This version has been converted from ChatGPT Sites/Cloudflare to a standard
-Next.js application for Vercel. It uses Supabase PostgreSQL for application
-data and a private Supabase Storage bucket for uploaded lab reports.
+**Scan Fast. Store Safely. Care Better.**
 
-## What was changed
+RapidLab is an emergency laboratory record-management system designed to help hospital staff upload, scan, verify and manage patient lab reports in one secure portal.
 
-- Replaced Cloudflare D1 with PostgreSQL through `DATABASE_URL`.
-- Replaced the Cloudflare R2 bucket with private Supabase Storage.
-- Replaced Cloudflare-only build commands with `next build`.
-- Converted all Drizzle tables and transactions to PostgreSQL.
-- Removed the automatic workspace-reset behavior so production data cannot be
-  cleared by opening the profile page.
+## About the Project
 
-## 1. Prepare Supabase
+During emergency admissions, nurses may receive several paper lab reports containing many values. Entering every value manually takes time, can cause typing mistakes and reduces the attention available for patient care.
 
-1. Open your Supabase project.
-2. Select **SQL Editor** and then **New query**.
-3. Copy all of `supabase-setup.sql`, paste it into the editor, and click
-   **Run**. It creates the empty tables and the private `lab-reports` bucket.
-4. Open **Project Settings -> Database** and copy the **Transaction pooler**
-   connection string. Use it as `DATABASE_URL`.
-5. Open **Project Settings -> API** and copy the project URL and service-role
-   secret. Never expose the service-role secret in browser code or commit it to
-   GitHub.
+RapidLab makes this process easier by allowing hospital staff to scan or upload multiple reports, review extracted information and save everything under the correct patient and hospital record.
 
-## 2. Add Vercel environment variables
+## Main Features
 
-In Vercel, open the project and select **Settings -> Environment Variables**.
-Add these variables for Production, Preview, and Development:
+* Staff sign-up and sign-in with email OTP verification
+* Nurse, doctor, supervisor and hospital-administrator roles
+* Create or join a hospital workspace
+* Add and manage patient records
+* Upload multiple lab-report images or PDF files
+* OCR-assisted extraction of common laboratory values
+* Review and correct extracted values before saving
+* Save a report even when no laboratory value is extracted
+* Store reports using the patient’s name, age, date and hospital
+* View complete patient history from other authorised staff accounts
+* Verify reports through doctors, supervisors or hospital administrators
+* Automatically refresh updated team, patient and report information
+* Delete individual reports or patient records when authorised
+* Delete a staff account without deleting the patient records uploaded by that staff member
+* Keep uploaded files inside private storage
 
-| Name | Value |
-| --- | --- |
-| `DATABASE_URL` | Supabase Transaction Pooler connection string |
-| `SUPABASE_URL` | Supabase project URL, such as `https://abc.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role secret |
-| `SUPABASE_STORAGE_BUCKET` | `lab-reports` |
-| `OTP_HASH_SECRET` | A long random secret of at least 32 characters |
-| `BREVO_API_KEY` | Brevo API key used to send verification emails |
-| `BREVO_SENDER_EMAIL` | A sender address verified in Brevo |
+## How RapidLab Works
 
-Do not add quotation marks around the values. If the database password contains
-characters such as `@`, `#`, `/`, `?`, or `%`, use the exact encoded pooler URL
-provided by Supabase rather than typing the URL manually.
+1. A staff member creates an account and verifies their email.
+2. The staff member creates or joins a hospital workspace.
+3. A new or existing patient is selected.
+4. One or more lab reports are scanned or uploaded.
+5. RapidLab attempts to extract supported laboratory values.
+6. The staff member reviews and corrects the information.
+7. The report is saved under the patient and hospital record.
+8. Other authorised hospital workers can view or verify it.
 
-## 3. Deploy
+## Primary Users
 
-1. Upload this project to the GitHub repository connected to Vercel.
-2. In Vercel, keep **Framework Preset** as Next.js.
-3. Keep **Build Command** as `npm run build` or leave it at its default.
-4. Keep **Output Directory** empty/default.
-5. Redeploy. The build should run `next build` and no longer reference
-   `cloudflare:workers`.
+* Nurses
+* Doctors
+* Laboratory staff
+* Supervisors
+* Hospital administrators
 
-## Local verification
+## Problem Addressed
 
-```bash
-npm ci
-npm run build
-```
+RapidLab aims to reduce:
 
-Copy `.env.example` to `.env.local` only when running locally. Environment
-files and secrets are intentionally excluded from Git.
+* Repeated manual data entry
+* Typing errors in laboratory values
+* Time spent switching between paper reports and computers
+* Difficulty finding older patient reports
+* Loss of work after interruptions
+* Mixing reports belonging to different patients
+* Dependence on the account of the person who uploaded the report
 
-## Important upload limit
+## Technology Used
 
-Vercel Functions accept request bodies up to 4.5 MB. RapidLab therefore accepts
-report uploads totalling up to 4 MB per save. Larger uploads require a future
-direct-to-storage upload flow.
+* Next.js
+* TypeScript
+* PostgreSQL
+* Supabase Database
+* Private Supabase Storage
+* Drizzle ORM
+* Vercel deployment
+
+##Team 
+
+* Shishir
+* Shristi
+
+## Project Status
+
+RapidLab is a working academic prototype created using the Human-Centred Design process. It is currently intended for demonstration and testing. Future development will include feedback from hospital staff, usability testing and additional security improvements for real-world use.
+
+## Data Security
+
+Database credentials, email-service keys and other sensitive settings are securely managed through environment variables and are not included in the public source code.
+
