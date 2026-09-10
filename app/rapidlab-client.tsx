@@ -46,11 +46,12 @@ type AdditionalLabResult = { testName: string; value: string; unit: string; refe
 type AdditionalLabField = keyof AdditionalLabResult;
 type Values = Record<TestKey, string> & { additionalTests: AdditionalLabResult[] };
 type EntryMode = "manual" | "scan";
+type ReportKind = "printed" | "handwritten";
 type StaffRole = "nurse" | "doctor" | "admin" | "viewer";
 type MemberStatus = "pending" | "active" | "inactive";
 type NavView = "Dashboard" | "Patients" | "Lab Records" | "Verification" | "Team" | "Activity" | "History" | "Settings";
 type Membership = { hospitalId: string; hospitalName: string; hospitalCode: string; role: StaffRole; status: MemberStatus };
-type ReportAttachment = { id: string; fileName: string; url: string; uploadedAt: string };
+type ReportAttachment = { id: string; fileName: string; url: string; uploadedAt: string; reportKind?: ReportKind };
 type PatientRecord = { recordId: string; id: string; name: string; age: string; createdAt: string; updatedAt: string; source: "Manual" | "Scan / upload"; values: Values; reports: ReportAttachment[]; reportCount: number; reportFileName?: string | null; reportUrl?: string | null; status: "pending" | "verified"; createdByEmail?: string | null; assignedToEmail?: string | null; verifiedByEmail?: string | null; verifiedAt?: string | null };
 type PlatformUser = { email: string; name: string };
 type StaffProfile = { email: string; name: string; staffId: string; membership: Membership | null };
@@ -285,6 +286,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
   const [patientAge, setPatientAge] = useState("");
   const [values, setValues] = useState<Values>(blankValues);
   const [reportFiles, setReportFiles] = useState<File[]>([]);
+  const [reportKind, setReportKind] = useState<ReportKind>("printed");
   const [ocrText, setOcrText] = useState("");
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -366,11 +368,19 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
   }
 
   function startEntry(mode: EntryMode) {
-    setEditingRecord(null); setEntryMode(mode); setPatientName(""); setPatientAge(""); setValues(blankValues()); setReportFiles([]); setOcrText(""); setOcrProgress(null); setEntryOpen(true);
+    setEditingRecord(null); setEntryMode(mode); setPatientName(""); setPatientAge(""); setValues(blankValues()); setReportFiles([]); setReportKind("printed"); setOcrText(""); setOcrProgress(null); setEntryOpen(true);
   }
 
   function startEdit(record: PatientRecord, preferredMode?: EntryMode) {
-    setEditingRecord(record); setEntryMode(preferredMode ?? (record.source === "Manual" ? "manual" : "scan")); setPatientName(record.name); setPatientAge(record.age); setValues(normalizeValues(record.values)); setReportFiles([]); setOcrText(""); setOcrProgress(null); setSelectedRecord(null); setEntryOpen(true);
+    setEditingRecord(record); setEntryMode(preferredMode ?? (record.source === "Manual" ? "manual" : "scan")); setPatientName(record.name); setPatientAge(record.age); setValues(normalizeValues(record.values)); setReportFiles([]); setReportKind("printed"); setOcrText(""); setOcrProgress(null); setSelectedRecord(null); setEntryOpen(true);
+  }
+
+  function changeReportKind(nextKind: ReportKind) {
+    if (reportFiles.length) return void toast.info("Remove the selected report files before changing the report type.");
+    setReportKind(nextKind);
+    setOcrText("");
+    setOcrProgress(null);
+    if (nextKind === "handwritten" && !editingRecord) setValues(blankValues());
   }
 
   function addAdditionalTest() {
@@ -404,6 +414,12 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
     if (!files.length) return void toast.error("You can add up to 8 report files at a time.");
     if (selected.length > room) toast.info(`Only the first ${room} additional file${room === 1 ? " was" : "s were"} added.`);
     setReportFiles((current) => [...current, ...files]);
+    if (reportKind === "handwritten") {
+      setOcrText("");
+      setOcrProgress(null);
+      toast.success(`${files.length} handwritten or mixed report${files.length === 1 ? "" : "s"} ready to save. Automatic extraction was skipped.`);
+      return;
+    }
     const readableFiles = files.filter((file) => file.type !== "application/pdf");
     if (!readableFiles.length) {
       setOcrProgress(null);
@@ -454,7 +470,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
       } else {
         const form = new FormData();
         form.set("patientName", patientName.trim()); form.set("patientAge", patientAge.trim());
-        form.set("source", entryMode === "manual" ? "Manual" : "Scan / upload"); form.set("values", JSON.stringify(values));
+        form.set("source", entryMode === "manual" ? "Manual" : "Scan / upload"); form.set("reportKind", reportKind); form.set("values", JSON.stringify(values));
         for (const report of reportFiles) form.append("reports", report);
         response = await fetch("/api/records", { method: "POST", body: form });
       }
@@ -463,6 +479,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
       let savedRecord = payload.record;
       if (editingRecord && reportFiles.length) {
         const reportForm = new FormData();
+        reportForm.set("reportKind", reportKind);
         for (const report of reportFiles) reportForm.append("reports", report);
         const reportResponse = await fetch(`/api/records/${editingRecord.recordId}/reports`, { method: "POST", body: reportForm });
         const reportPayload = await reportResponse.json() as { reports?: ReportAttachment[]; status?: "pending"; updatedAt?: string; error?: string };
@@ -472,7 +489,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
       }
       setRecords((current) => editingRecord ? current.map((item) => item.recordId === savedRecord.recordId ? savedRecord : item) : [savedRecord, ...current]);
       void refreshWorkspace();
-      setReportFiles([]); setEditingRecord(null); setEntryOpen(false); toast.success(editingRecord ? `Patient record updated${reportFiles.length ? ` with ${reportFiles.length} new report file${reportFiles.length === 1 ? "" : "s"}` : ""}.` : `Patient record saved with ${reportFiles.length} report file${reportFiles.length === 1 ? "" : "s"}.`);
+      setReportFiles([]); setReportKind("printed"); setEditingRecord(null); setEntryOpen(false); toast.success(editingRecord ? `Patient record updated${reportFiles.length ? ` with ${reportFiles.length} new report file${reportFiles.length === 1 ? "" : "s"}` : ""}.` : `Patient record saved with ${reportFiles.length} report file${reportFiles.length === 1 ? "" : "s"}.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save record");
     } finally { setSaving(false); }
@@ -594,14 +611,18 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
       <DialogHeader><DialogTitle>{editingRecord ? `Edit ${editingRecord.id}` : "New laboratory record"}</DialogTitle><DialogDescription>{editingRecord ? "Changes are shared with the hospital and return the record to pending verification." : "Add the patient details and report. The record can be saved even when no laboratory value is available."}</DialogDescription></DialogHeader>
       <Tabs value={entryMode} onValueChange={(value) => setEntryMode(value as EntryMode)}><TabsList className="entry-tabs"><TabsTrigger value="manual"><UserRound /> Manual entry</TabsTrigger><TabsTrigger value="scan"><FileScan /> Scan & upload</TabsTrigger></TabsList>
         <TabsContent value="manual"><p className="mode-note">Type only the values written on the patient’s report.</p></TabsContent>
-        <TabsContent value="scan">{editingRecord?.reports.length ? <div className="existing-report-note"><FileImage /><span><strong>{editingRecord.reports.length} saved report{editingRecord.reports.length === 1 ? "" : "s"}</strong><small>They will remain attached. Add more images or PDFs below whenever the patient has another lab report.</small></span></div> : null}<div className="upload-zone">
+        <TabsContent value="scan">{editingRecord?.reports.length ? <div className="existing-report-note"><FileImage /><span><strong>{editingRecord.reports.length} saved report{editingRecord.reports.length === 1 ? "" : "s"}</strong><small>They will remain attached. Add more images or PDFs below whenever the patient has another lab report.</small></span></div> : null}
+          <div className="report-kind-section"><div><strong>Choose the report type before uploading</strong><p>This controls whether RapidLab attempts to read laboratory values.</p></div><div className="report-kind-picker" role="group" aria-label="Report type">
+            <button type="button" className={reportKind === "printed" ? "active" : ""} aria-pressed={reportKind === "printed"} disabled={reportFiles.length > 0} onClick={() => changeReportKind("printed")}><FileScan /><span><strong>Printed report</strong><small>Attempt OCR extraction</small></span>{reportKind === "printed" && <Check />}</button>
+            <button type="button" className={reportKind === "handwritten" ? "active handwritten" : "handwritten"} aria-pressed={reportKind === "handwritten"} disabled={reportFiles.length > 0} onClick={() => changeReportKind("handwritten")}><FileImage /><span><strong>Handwritten / mixed</strong><small>Save original; skip extraction</small></span>{reportKind === "handwritten" && <Check />}</button>
+          </div>{reportFiles.length > 0 && <small className="report-kind-locked">Remove all newly selected files to change the report type.</small>}</div><div className="upload-zone">
           <input ref={cameraRef} className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => { void readReports(event.currentTarget.files); event.currentTarget.value = ""; }} />
           <input ref={uploadRef} className="sr-only" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" multiple onChange={(event) => { void readReports(event.currentTarget.files); event.currentTarget.value = ""; }} />
-          <span><Camera /></span><div><strong>{reportFiles.length ? `${reportFiles.length} new report${reportFiles.length === 1 ? "" : "s"} selected` : "Scan or upload several lab reports"}</strong><p>Choose up to 8 JPG, PNG, WebP or PDF files totalling under 4 MB. Reports can be saved even when no lab values are extracted.</p></div><div><Button type="button" onClick={() => cameraRef.current?.click()}><Camera /> Scan another</Button><Button type="button" variant="outline" onClick={() => uploadRef.current?.click()}><Upload /> Upload multiple</Button></div>
-        </div>{reportFiles.length ? <div className="pending-report-list">{reportFiles.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`}><FileImage /><span><strong>{file.name}</strong><small>{(file.size / 1024 / 1024).toFixed(1)} MB · ready to save</small></span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setReportFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X /></button></div>)}</div> : null}{ocrProgress !== null && <div className="ocr-progress"><span style={{ width: `${ocrProgress}%` }} /><p>{ocrProgress < 100 ? <><LoaderCircle className="spin" /> Reading reports… {ocrProgress}%</> : <><Check /> Extraction complete — verify all results below</>}</p></div>}{ocrText && <details className="ocr-raw"><summary>View detected report text</summary><pre>{ocrText}</pre></details>}</TabsContent>
+          <span>{reportKind === "printed" ? <FileScan /> : <FileImage />}</span><div><strong>{reportFiles.length ? `${reportFiles.length} new ${reportKind} report${reportFiles.length === 1 ? "" : "s"} selected` : reportKind === "printed" ? "Scan or upload printed lab reports" : "Upload handwritten or mixed lab reports"}</strong><p>{reportKind === "printed" ? "Choose up to 8 clear JPG, PNG, WebP or PDF files totalling under 4 MB. RapidLab will try to extract values from supported images." : "Choose up to 8 JPG, PNG, WebP or PDF files totalling under 4 MB. The files will be saved without OCR extraction."}</p></div><div><Button type="button" onClick={() => cameraRef.current?.click()}><Camera /> Scan another</Button><Button type="button" variant="outline" onClick={() => uploadRef.current?.click()}><Upload /> Upload multiple</Button></div>
+        </div>{reportFiles.length ? <div className="pending-report-list">{reportFiles.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`}><FileImage /><span><strong>{file.name}</strong><small>{(file.size / 1024 / 1024).toFixed(1)} MB · {reportKind === "handwritten" ? "handwritten · extraction skipped" : "printed · ready to save"}</small></span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setReportFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X /></button></div>)}</div> : null}{reportKind === "handwritten" && reportFiles.length > 0 && <div className="extraction-skipped-note"><ShieldCheck /><span><strong>Automatic extraction skipped</strong><small>The original report will be saved under this patient. No laboratory value will be guessed.</small></span></div>}{reportKind === "printed" && ocrProgress !== null && <div className="ocr-progress"><span style={{ width: `${ocrProgress}%` }} /><p>{ocrProgress < 100 ? <><LoaderCircle className="spin" /> Reading reports… {ocrProgress}%</> : <><Check /> Extraction complete — verify all results below</>}</p></div>}{reportKind === "printed" && ocrText && <details className="ocr-raw"><summary>View detected report text</summary><pre>{ocrText}</pre></details>}</TabsContent>
       </Tabs>
       <div className="patient-fields"><Field label="Patient name" value={patientName} onChange={setPatientName} placeholder="Enter or verify patient name" /><Field label="Age (years)" value={patientAge} onChange={setPatientAge} placeholder="Enter or verify age" /></div>
-      <section className="additional-tests" aria-label="Additional laboratory results">
+      {entryMode === "scan" && reportKind === "handwritten" ? <section className="handwritten-results-note" aria-label="Handwritten report extraction status"><FileImage /><div><h3>No automatic laboratory results</h3><p>RapidLab will save the original handwritten or mixed report. Staff can open it later from the patient record.</p></div></section> : <section className="additional-tests" aria-label="Additional laboratory results">
         <div className="additional-tests-head"><div><h3>Laboratory results</h3><p>Only tests found in the uploaded report appear here. Check the results, or add another test manually.</p></div><Button type="button" variant="outline" onClick={addAdditionalTest}><Plus /> Add test</Button></div>
         {values.additionalTests.length ? <div className="additional-test-list">{values.additionalTests.map((test, index) => <div className="additional-test-row" key={`${test.testName}-${index}`}>
           <label><span>Test name</span><Input value={test.testName} onChange={(event) => updateAdditionalTest(index, "testName", event.target.value)} placeholder="Example: TSH" /></label>
@@ -610,7 +631,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
           <label><span>Reference range</span><Input value={test.referenceRange} onChange={(event) => updateAdditionalTest(index, "referenceRange", event.target.value)} placeholder="Range" /></label>
           <button className="remove-additional-test" type="button" aria-label={`Remove ${test.testName || "additional test"}`} onClick={() => removeAdditionalTest(index)}><Trash2 /></button>
         </div>)}</div> : <p className="additional-tests-empty">No laboratory results yet. Upload a report or select “Add test”.</p>}
-      </section>
+      </section>}
       <div className="entry-actions"><p><ShieldCheck /> Doctor or supervisor verification is required after submission.</p><div><Button variant="outline" onClick={() => setEntryOpen(false)} disabled={saving}>Cancel</Button><Button onClick={saveRecord} disabled={saving}>{saving && <LoaderCircle className="spin" />}{saving ? "Saving…" : editingRecord ? "Save changes" : "Share with hospital"}</Button></div></div>
     </DialogContent></Dialog>
     <Dialog open={Boolean(selectedRecord)} onOpenChange={(open) => { if (!open) setSelectedRecord(null); }}><DialogContent className="record-dialog">
@@ -618,7 +639,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
         <DialogHeader><DialogTitle>{selectedRecord.name}</DialogTitle><DialogDescription>{selectedRecord.id} · {selectedRecord.age ? `${selectedRecord.age} years` : "Age not entered"} · {new Date(selectedRecord.createdAt).toLocaleString()}</DialogDescription></DialogHeader>
         <div className="record-summary"><span><strong>Entry method</strong>{selectedRecord.source}</span><span><strong>Status</strong><b className={`record-status ${selectedRecord.status}`}>{selectedRecord.status === "verified" ? "Verified" : "Pending verification"}</b></span><span><strong>Created by</strong>{selectedRecord.createdByEmail || "Hospital staff"}</span><span><strong>Last updated</strong>{new Date(selectedRecord.updatedAt).toLocaleString()}</span></div>
         <div className="record-values">{normalizeValues(selectedRecord.values).additionalTests.map((test, index) => <div key={`${test.testName}-${index}`}><span>{test.testName}<small>{[test.unit, test.referenceRange ? `Range: ${test.referenceRange}` : ""].filter(Boolean).join(" · ")}</small></span><strong>{test.value || "—"}</strong></div>)}</div>
-        <section className="report-collection"><div className="report-collection-head"><div><FileImage /><span><strong>Patient lab reports</strong><small>{selectedRecord.reports.length ? `${selectedRecord.reports.length} saved file${selectedRecord.reports.length === 1 ? "" : "s"}` : "No reports attached"}</small></span></div>{role !== "viewer" && <Button variant="outline" size="sm" onClick={() => startEdit(selectedRecord, "scan")}><Plus /> Add reports</Button>}</div>{selectedRecord.reports.length ? <div className="saved-report-list">{selectedRecord.reports.map((report, index) => <div key={report.id}><span><FileCheck2 /><strong>Report {index + 1}</strong><small>{report.fileName} · {new Date(report.uploadedAt).toLocaleString()}</small></span><div className="saved-report-actions"><Button asChild size="sm"><a href={report.url} target="_blank" rel="noreferrer">Open <ExternalLink /></a></Button>{role !== "viewer" && <Button variant="destructive" size="sm" className="remove-staff-button" aria-label={`Delete ${report.fileName}`} onClick={() => setDeleteTarget({ type: "report", record: selectedRecord, report })}><Trash2 /> Delete</Button>}</div></div>)}</div> : <p className="no-report-copy">Use “Add reports” to attach the patient’s lab report images or PDFs.</p>}</section>
+        <section className="report-collection"><div className="report-collection-head"><div><FileImage /><span><strong>Patient lab reports</strong><small>{selectedRecord.reports.length ? `${selectedRecord.reports.length} saved file${selectedRecord.reports.length === 1 ? "" : "s"}` : "No reports attached"}</small></span></div>{role !== "viewer" && <Button variant="outline" size="sm" onClick={() => startEdit(selectedRecord, "scan")}><Plus /> Add reports</Button>}</div>{selectedRecord.reports.length ? <div className="saved-report-list">{selectedRecord.reports.map((report, index) => <div key={report.id}><span><FileCheck2 /><strong>{report.reportKind === "handwritten" ? "Handwritten report" : report.reportKind === "printed" ? "Printed report" : "Report"} {index + 1}</strong><small>{report.fileName} · {report.reportKind === "handwritten" ? "extraction skipped · " : ""}{new Date(report.uploadedAt).toLocaleString()}</small></span><div className="saved-report-actions"><Button asChild size="sm"><a href={report.url} target="_blank" rel="noreferrer">Open <ExternalLink /></a></Button>{role !== "viewer" && <Button variant="destructive" size="sm" className="remove-staff-button" aria-label={`Delete ${report.fileName}`} onClick={() => setDeleteTarget({ type: "report", record: selectedRecord, report })}><Trash2 /> Delete</Button>}</div></div>)}</div> : <p className="no-report-copy">Use “Add reports” to attach the patient’s lab report images or PDFs.</p>}</section>
         <div className="record-dialog-actions">{role !== "viewer" && <Button variant="destructive" className="record-delete-button" onClick={() => setDeleteTarget({ type: "record", record: selectedRecord })}><Trash2 /> Delete patient record</Button>}{role !== "viewer" && <Button variant="outline" onClick={() => startEdit(selectedRecord)}><Pencil /> Edit patient details</Button>}{(role === "doctor" || role === "admin") && selectedRecord.status === "pending" && <Button onClick={() => verifyRecord(selectedRecord)} disabled={verifying}>{verifying ? <LoaderCircle className="spin" /> : <ClipboardCheck />} Verify record</Button>}</div>
       </>}
     </DialogContent></Dialog>

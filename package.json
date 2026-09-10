@@ -9,7 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "npm run build && node --test tests/delete-records.test.mjs tests/live-sync.test.mjs",
+    "test": "npm run build && node --test tests/delete-records.test.mjs tests/live-sync.test.mjs tests/report-files.test.mjs",
     "lint": "eslint . --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

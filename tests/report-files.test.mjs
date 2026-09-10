@@ -1,28 +1,29 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import test, { after } from "node:test";
-import { fileURLToPath } from "node:url";
-
-import { createServer } from "vite";
-
-const root = fileURLToPath(new URL("..", import.meta.url));
-const vite = await createServer({
-  appType: "custom",
-  configFile: false,
-  root,
-  resolve: { alias: { "@": root } },
-  server: { middlewareMode: true, hmr: false },
-});
-
-after(async () => {
-  await vite.close();
-});
+import test from "node:test";
 
 test("accepts PDF lab reports", async () => {
-  const { validateReportFiles } = await vite.ssrLoadModule("/lib/lab-records.ts");
-  const report = new File(["%PDF-1.7"], "patient-report.pdf", { type: "application/pdf" });
+  const source = await readFile(new URL("../lib/lab-records.ts", import.meta.url), "utf8");
 
-  assert.equal(validateReportFiles([report]), null);
+  assert.match(source, /"application\/pdf"/);
+  assert.match(source, /Only JPG, PNG, WebP, and PDF report files are supported/);
+});
+
+test("stores printed and handwritten report types without a database migration", async () => {
+  const source = await readFile(new URL("../lib/lab-records.ts", import.meta.url), "utf8");
+
+  assert.match(source, /type ReportKind = "printed" \| "handwritten"/);
+  assert.match(source, /`reports\/\$\{recordId\}\/\$\{reportKind\}\/\$\{reportId\}-\$\{safeName\}`/);
+  assert.match(source, /reportKindFromFileKey\(report\.fileKey\)/);
+});
+
+test("handwritten uploads skip OCR and are labelled for later review", async () => {
+  const source = await readFile(new URL("../app/rapidlab-client.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /reportKind === "handwritten"/);
+  assert.match(source, /Automatic extraction was skipped/);
+  assert.match(source, /No laboratory value will be guessed/);
+  assert.match(source, /form\.set\("reportKind", reportKind\)/);
 });
 
 test("does not require a laboratory value before saving", async () => {

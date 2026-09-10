@@ -2,7 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { labRecords, labReportFiles } from "@/db/schema";
 import { forbidden, logAudit, requireActiveMember, unauthorized } from "@/lib/access";
-import { validateReportFiles } from "@/lib/lab-records";
+import { createReportFileKey, normalizeReportKind, validateReportFiles } from "@/lib/lab-records";
 import { deleteReport, uploadReport } from "@/lib/report-storage";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -19,6 +19,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const insertedIds: string[] = [];
   try {
     const form = await request.formData();
+    const reportKind = normalizeReportKind(form.get("reportKind"));
     const reports = form.getAll("reports").filter((value): value is File => value instanceof File && value.size > 0);
     if (!reports.length) return Response.json({ error: "Choose at least one report file" }, { status: 400 });
     const fileError = validateReportFiles(reports);
@@ -30,7 +31,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const reportId = crypto.randomUUID();
       const fileName = report.name.slice(0, 180) || "lab-report";
       const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "-");
-      const fileKey = `reports/${id}/${reportId}-${safeName}`;
+      const fileKey = createReportFileKey(id, reportId, safeName, reportKind);
       await uploadReport(fileKey, await report.arrayBuffer(), report.type);
       uploadedKeys.push(fileKey);
       insertedIds.push(reportId);
@@ -39,9 +40,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     await getDb().insert(labReportFiles).values(storedReports);
     await getDb().update(labRecords).set({ source: "Scan / upload", status: "pending", verifiedByEmail: null, verifiedAt: null, updatedAt: now }).where(eq(labRecords.id, id));
-    await logAudit({ hospitalId, recordId: id, actorEmail: staff.user.email, actorName: staff.profile.name, action: "reports_added", details: `Added ${reports.length} report file${reports.length === 1 ? "" : "s"} to ${record.patientCode}` });
+    await logAudit({ hospitalId, recordId: id, actorEmail: staff.user.email, actorName: staff.profile.name, action: "reports_added", details: `Added ${reports.length} ${reportKind} report file${reports.length === 1 ? "" : "s"} to ${record.patientCode}${reportKind === "handwritten" ? "; extraction skipped" : ""}` });
     return Response.json({
-      reports: storedReports.map((report) => ({ id: report.id, fileName: report.fileName, url: `/api/records/${id}/reports/${report.id}`, uploadedAt: now.toISOString() })),
+      reports: storedReports.map((report) => ({ id: report.id, fileName: report.fileName, url: `/api/records/${id}/reports/${report.id}`, uploadedAt: now.toISOString(), reportKind })),
       status: "pending",
       updatedAt: now.toISOString(),
     }, { status: 201 });

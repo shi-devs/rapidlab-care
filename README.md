@@ -21,7 +21,8 @@ RapidLab Care simplifies this process by allowing authorised staff to upload mul
 * Create or join a hospital workspace
 * Add and manage patient records
 * Upload multiple lab-report images or PDF files
-* OCR-assisted extraction of laboratory values
+* OCR-assisted extraction of laboratory values from clear printed report images
+* Handwritten or mixed reports are saved without automatic extraction to prevent guessed values
 * Review and correct extracted values before saving
 * Save a report even when no laboratory value is extracted
 * Store reports using the patient’s name, age, date and hospital
@@ -37,11 +38,12 @@ RapidLab Care simplifies this process by allowing authorised staff to upload mul
 1. A staff member creates an account and verifies their email.
 2. The staff member creates or joins a hospital workspace.
 3. A new or existing patient is selected.
-4. One or more lab reports are scanned or uploaded.
-5. RapidLab Care attempts to extract supported laboratory values.
-6. The staff member reviews and corrects the information.
-7. The report is saved under the patient and hospital record.
-8. Other authorised hospital workers can view or verify it.
+4. The staff member selects whether the report is printed or handwritten/mixed.
+5. One or more lab reports are scanned or uploaded.
+6. RapidLab Care attempts extraction only for printed report images; handwritten/mixed reports are saved as original files without extraction.
+7. The staff member reviews and corrects any extracted information.
+8. The report is saved under the patient and hospital record.
+9. Other authorised hospital workers can view or verify it.
 
 ## Primary Users
 

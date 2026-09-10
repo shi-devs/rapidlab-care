@@ -1,5 +1,20 @@
 import { labRecords, labReportFiles } from "@/db/schema";
 
+export type ReportKind = "printed" | "handwritten";
+
+export function normalizeReportKind(value: unknown): ReportKind {
+  return value === "handwritten" ? "handwritten" : "printed";
+}
+
+export function createReportFileKey(recordId: string, reportId: string, safeName: string, reportKind: ReportKind) {
+  return `reports/${recordId}/${reportKind}/${reportId}-${safeName}`;
+}
+
+export function reportKindFromFileKey(fileKey: string): ReportKind | undefined {
+  const match = fileKey.match(/^reports\/[^/]+\/(printed|handwritten)\//);
+  return match ? normalizeReportKind(match[1]) : undefined;
+}
+
 export const VALUE_KEYS = [
   "haemoglobin", "wbc", "rbc", "platelets", "haematocrit", "mcv", "mch",
   "mchc", "neutrophils", "lymphocytes", "sodium", "potassium", "chloride",
@@ -47,6 +62,7 @@ export function serializeLabRecord(
       fileName: report.fileName,
       url: `/api/records/${row.id}/reports/${report.id}`,
       uploadedAt: report.createdAt.toISOString(),
+      reportKind: reportKindFromFileKey(report.fileKey),
     })),
   ];
 

@@ -2,7 +2,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { labRecords, labReportFiles } from "@/db/schema";
 import { forbidden, logAudit, requireActiveMember, unauthorized } from "@/lib/access";
-import { cleanValues, serializeLabRecord, validateReportFiles } from "@/lib/lab-records";
+import { cleanValues, createReportFileKey, normalizeReportKind, serializeLabRecord, validateReportFiles } from "@/lib/lab-records";
 import { deleteReport, uploadReport } from "@/lib/report-storage";
 
 export async function GET() {
@@ -35,9 +35,11 @@ export async function POST(request: Request) {
     const patientName = String(form.get("patientName") ?? "").trim().slice(0, 120);
     const ageText = String(form.get("patientAge") ?? "").trim();
     const source = form.get("source") === "Scan / upload" ? "Scan / upload" : "Manual";
-    const values = cleanValues(JSON.parse(String(form.get("values") ?? "{}")));
+    const reportKind = normalizeReportKind(form.get("reportKind"));
+    const submittedValues = cleanValues(JSON.parse(String(form.get("values") ?? "{}")));
     const reports = [...form.getAll("reports"), form.get("report")]
       .filter((value): value is File => value instanceof File && value.size > 0);
+    const values = reportKind === "handwritten" && reports.length ? cleanValues({}) : submittedValues;
 
     if (!patientName) return Response.json({ error: "Patient name is required" }, { status: 400 });
     const fileError = validateReportFiles(reports);
@@ -53,7 +55,7 @@ export async function POST(request: Request) {
       const reportId = crypto.randomUUID();
       const fileName = report.name.slice(0, 180) || "lab-report";
       const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "-");
-      const fileKey = `reports/${id}/${reportId}-${safeName}`;
+      const fileKey = createReportFileKey(id, reportId, safeName, reportKind);
       await uploadReport(fileKey, await report.arrayBuffer(), report.type);
       uploadedKeys.push(fileKey);
       storedReports.push({ id: reportId, recordId: id, hospitalId: context.profile.membership.hospitalId, fileKey, fileName, contentType: report.type, uploadedByEmail: context.user.email, createdAt: now });
@@ -66,7 +68,8 @@ export async function POST(request: Request) {
     }).returning();
     createdRecordId = id;
     if (storedReports.length) await getDb().insert(labReportFiles).values(storedReports);
-    await logAudit({ hospitalId: context.profile.membership.hospitalId, recordId: id, actorEmail: context.user.email, actorName: context.profile.name, action: "record_created", details: `Created ${patientCode} for ${patientName} using ${source} with ${reports.length} report file${reports.length === 1 ? "" : "s"}` });
+    const reportDescription = reports.length ? ` (${reportKind}${reportKind === "handwritten" ? "; extraction skipped" : ""})` : "";
+    await logAudit({ hospitalId: context.profile.membership.hospitalId, recordId: id, actorEmail: context.user.email, actorName: context.profile.name, action: "record_created", details: `Created ${patientCode} for ${patientName} using ${source} with ${reports.length} report file${reports.length === 1 ? "" : "s"}${reportDescription}` });
     return Response.json({ record: serializeLabRecord(row, storedReports as Array<typeof labReportFiles.$inferSelect>) }, { status: 201 });
   } catch (error) {
     await Promise.all(uploadedKeys.map((key) => deleteReport(key).catch(() => undefined)));
