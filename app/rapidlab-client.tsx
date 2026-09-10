@@ -48,7 +48,7 @@ type Values = Record<TestKey, string> & { additionalTests: AdditionalLabResult[]
 type EntryMode = "manual" | "scan";
 type StaffRole = "nurse" | "doctor" | "admin" | "viewer";
 type MemberStatus = "pending" | "active" | "inactive";
-type NavView = "Dashboard" | "Patients" | "Emergency Admissions" | "Verification" | "Team" | "Activity" | "History" | "Settings";
+type NavView = "Dashboard" | "Patients" | "Lab Records" | "Verification" | "Team" | "Activity" | "History" | "Settings";
 type Membership = { hospitalId: string; hospitalName: string; hospitalCode: string; role: StaffRole; status: MemberStatus };
 type ReportAttachment = { id: string; fileName: string; url: string; uploadedAt: string };
 type PatientRecord = { recordId: string; id: string; name: string; age: string; createdAt: string; updatedAt: string; source: "Manual" | "Scan / upload"; values: Values; reports: ReportAttachment[]; reportCount: number; reportFileName?: string | null; reportUrl?: string | null; status: "pending" | "verified"; createdByEmail?: string | null; assignedToEmail?: string | null; verifiedByEmail?: string | null; verifiedAt?: string | null };
@@ -166,7 +166,7 @@ function AuthScreen({ onAuthenticated, initialError = "" }: { onAuthenticated: (
   return <main className="auth-shell">
     <section className="auth-story" aria-label="RapidLab introduction">
       <Logo />
-      <div className="auth-story-copy"><p className="eyebrow"><Zap /> Emergency care workflow</p><h1>Move from <em>paper</em> to <em>patient</em> in seconds.</h1><p>Fast laboratory data entry for high-pressure emergency care.</p></div>
+      <div className="auth-story-copy"><p className="eyebrow"><Zap /> Laboratory record workflow</p><h1>Move from <em>paper</em> to <em>patient</em> in seconds.</h1><p>Fast laboratory record entry for nurses and healthcare staff.</p></div>
       <p className="trust-line"><ShieldCheck /> Human-verified data entry · Clinical prototype</p>
     </section>
     <section className="auth-panel"><div className="auth-card">
@@ -177,14 +177,14 @@ function AuthScreen({ onAuthenticated, initialError = "" }: { onAuthenticated: (
         <TabsList className="auth-tabs"><TabsTrigger value="signin">Sign in</TabsTrigger><TabsTrigger value="signup">Sign up</TabsTrigger></TabsList>
         <form onSubmit={submit}>
           <TabsContent value="signin" className="auth-form">
-            <Field label="Email address" value={email} onChange={setEmail} placeholder="nurse@hospital.org" type="email" />
+            <Field label="Email address" value={email} onChange={setEmail} placeholder="staff@healthcare.org" type="email" />
             <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Enter your password" />
             <p className="secure-note"><LockKeyhole /> Your account and hospital membership are checked before records are loaded.</p>
           </TabsContent>
           <TabsContent value="signup" className="auth-form">
             {signupStep === "details" ? <>
-              <div className="auth-field-row"><Field label="Full name" value={name} onChange={setName} placeholder="Nurse name" /><Field label="Staff ID" value={staffId} onChange={setStaffId} placeholder="Example: NUR-204" /></div>
-              <Field label="Email address" value={email} onChange={setEmail} placeholder="nurse@hospital.org" type="email" />
+              <div className="auth-field-row"><Field label="Full name" value={name} onChange={setName} placeholder="Staff member name" /><Field label="Staff ID" value={staffId} onChange={setStaffId} placeholder="Example: STA-204" /></div>
+              <Field label="Email address" value={email} onChange={setEmail} placeholder="staff@healthcare.org" type="email" />
               <PasswordField label="Password" value={password} onChange={setPassword} placeholder="At least 10 characters" />
               <PasswordField label="Confirm password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Enter the password again" />
               <p className="secure-note"><ShieldCheck /> Use at least 10 characters, including a letter and a number.</p>
@@ -255,9 +255,9 @@ function HospitalOnboarding({ profile, onProfile, onLogout }: { profile: StaffPr
     finally { setBusy(false); }
   }
 
-  if (profile.membership) return <main className="onboarding-shell"><section className="pending-access-card"><span className="pending-icon"><Clock3 /></span><p className="eyebrow">Approval pending</p><h1>{profile.membership.hospitalName}</h1><p>Your request to join as a Nurse has been sent. A Hospital Admin must approve it before patient records become visible.</p><div className="hospital-code-line"><Building2 /><span><small>Hospital code</small><strong>{profile.membership.hospitalCode}</strong></span></div><div className="pending-actions"><Button onClick={() => void refreshProfile(true)} disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <Activity />} Check approval</Button><Button variant="outline" onClick={onLogout}><LogOut /> Logout</Button></div></section><Toaster position="top-center" /></main>;
+  if (profile.membership) return <main className="onboarding-shell"><section className="pending-access-card"><span className="pending-icon"><Clock3 /></span><p className="eyebrow">Approval pending</p><h1>{profile.membership.hospitalName}</h1><p>Your request to join this healthcare workspace has been sent. A Hospital Admin must approve it before patient records become visible.</p><div className="hospital-code-line"><Building2 /><span><small>Hospital code</small><strong>{profile.membership.hospitalCode}</strong></span></div><div className="pending-actions"><Button onClick={() => void refreshProfile(true)} disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <Activity />} Check approval</Button><Button variant="outline" onClick={onLogout}><LogOut /> Logout</Button></div></section><Toaster position="top-center" /></main>;
 
-  return <main className="auth-shell hospital-onboarding"><section className="auth-story"><Logo /><div className="auth-story-copy"><p className="eyebrow"><Building2 /> Shared clinical workspace</p><h1>One hospital.<em>One patient history.</em></h1><p>Authorized nurses, doctors and administrators can work together without sharing passwords.</p></div><p className="trust-line"><ShieldCheck /> Role-based access · Complete activity history</p></section><section className="auth-panel"><div className="auth-card"><p className="eyebrow">Hospital setup</p><h2>Connect your workplace</h2><p className="auth-intro">Create a new hospital workspace or join your team with its hospital code.</p><Tabs value={mode} onValueChange={(value) => setMode(value as "create" | "join")}><TabsList className="auth-tabs"><TabsTrigger value="join">Join hospital</TabsTrigger><TabsTrigger value="create">Create hospital</TabsTrigger></TabsList><form className="auth-form" onSubmit={submit}>{mode === "join" ? <Field label="Hospital code" value={hospitalCode} onChange={setHospitalCode} placeholder="Example: HSP-4A92BC" /> : <Field label="Hospital or clinic name" value={hospitalName} onChange={setHospitalName} placeholder="Example: City Emergency Hospital" />}<p className="secure-note"><LockKeyhole /> {mode === "join" ? "An administrator must approve your access." : "You will become the first Hospital Admin."}</p><Button className="primary-cta" type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : mode === "join" ? <UsersRound /> : <Building2 />}{busy ? "Please wait…" : mode === "join" ? "Request access" : "Create hospital workspace"}</Button></form></Tabs><Button variant="ghost" className="onboarding-logout" onClick={onLogout}><LogOut /> Use another account</Button></div></section><Toaster position="top-center" /></main>;
+  return <main className="auth-shell hospital-onboarding"><section className="auth-story"><Logo /><div className="auth-story-copy"><p className="eyebrow"><Building2 /> Shared clinical workspace</p><h1>One hospital.<em>One patient history.</em></h1><p>Authorized nurses, doctors and administrators can work together without sharing passwords.</p></div><p className="trust-line"><ShieldCheck /> Role-based access · Complete activity history</p></section><section className="auth-panel"><div className="auth-card"><p className="eyebrow">Hospital setup</p><h2>Connect your workplace</h2><p className="auth-intro">Create a new hospital workspace or join your team with its hospital code.</p><Tabs value={mode} onValueChange={(value) => setMode(value as "create" | "join")}><TabsList className="auth-tabs"><TabsTrigger value="join">Join hospital</TabsTrigger><TabsTrigger value="create">Create hospital</TabsTrigger></TabsList><form className="auth-form" onSubmit={submit}>{mode === "join" ? <Field label="Hospital code" value={hospitalCode} onChange={setHospitalCode} placeholder="Example: HSP-4A92BC" /> : <Field label="Hospital or clinic name" value={hospitalName} onChange={setHospitalName} placeholder="Example: Community Care Clinic" />}<p className="secure-note"><LockKeyhole /> {mode === "join" ? "An administrator must approve your access." : "You will become the first Hospital Admin."}</p><Button className="primary-cta" type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : mode === "join" ? <UsersRound /> : <Building2 />}{busy ? "Please wait…" : mode === "join" ? "Request access" : "Create hospital workspace"}</Button></form></Tabs><Button variant="ghost" className="onboarding-logout" onClick={onLogout}><LogOut /> Use another account</Button></div></section><Toaster position="top-center" /></main>;
 }
 
 function Field({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; type?: string }) {
@@ -563,7 +563,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
 
   const navItems: { label: NavView; icon: typeof LayoutDashboard }[] = [
     { label: "Dashboard", icon: LayoutDashboard }, { label: "Patients", icon: UsersRound },
-    ...(role === "nurse" ? [{ label: "Emergency Admissions" as NavView, icon: Zap }] : []),
+    ...(role === "nurse" ? [{ label: "Lab Records" as NavView, icon: Zap }] : []),
     ...(role === "doctor" ? [{ label: "Verification" as NavView, icon: ClipboardCheck }, { label: "Activity" as NavView, icon: ListChecks }] : []),
     ...(role === "admin" ? [{ label: "Verification" as NavView, icon: ClipboardCheck }, { label: "Team" as NavView, icon: UserCog }, { label: "Activity" as NavView, icon: ListChecks }] : []),
     { label: "History", icon: History }, { label: "Settings", icon: Settings },
@@ -582,7 +582,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
       <main className="dashboard-main">
         {view === "Dashboard" && <RoleDashboard profile={profile} dateLabel={dateLabel} records={records} team={team} activity={activity} onManual={() => startEntry("manual")} onScan={() => startEntry("scan")} onView={setSelectedRecord} onVerify={verifyRecord} />}
         {view === "Patients" && <PatientsWorkspace records={visiblePatients} search={patientSearch} onSearch={setPatientSearch} canCreate={role !== "viewer"} onNew={() => startEntry("manual")} onView={setSelectedRecord} />}
-        {view === "Emergency Admissions" && <EmergencyWorkspace records={records} onManual={() => startEntry("manual")} onScan={() => startEntry("scan")} onView={setSelectedRecord} />}
+        {view === "Lab Records" && <LabRecordsWorkspace records={records} onManual={() => startEntry("manual")} onScan={() => startEntry("scan")} onView={setSelectedRecord} />}
         {view === "Verification" && <VerificationWorkspace records={records.filter((record) => record.status === "pending")} onView={setSelectedRecord} onVerify={verifyRecord} verifying={verifying} />}
         {view === "Team" && <TeamWorkspace members={team} currentEmail={profile.email} onRoleChange={changeMemberRole} onSave={saveMember} onRemove={removeMember} />}
         {view === "Activity" && <ActivityWorkspace activity={activity} />}
@@ -641,14 +641,14 @@ function RoleDashboard({ profile, dateLabel, records, team, activity, onManual, 
 
 function DashboardOverview({ staffName, hospitalName, dateLabel, records, onManual, onScan, onView }: { staffName: string; hospitalName: string; dateLabel: string; records: PatientRecord[]; onManual: () => void; onScan: () => void; onView: (record: PatientRecord) => void }) {
   return <div className="workspace-page dashboard-view">
-    <section className="welcome-row"><div><p className="eyebrow">{dateLabel}</p><h1>Good day, {staffName.split(" ")[0]}</h1><p>Nurse · {hospitalName} shared laboratory workspace</p></div><Button className="new-patient" onClick={onManual}><Plus /> New emergency patient</Button></section>
+    <section className="welcome-row"><div><p className="eyebrow">{dateLabel}</p><h1>Good day, {staffName.split(" ")[0]}</h1><p>Healthcare staff · {hospitalName} shared laboratory workspace</p></div><Button className="new-patient" onClick={onManual}><Plus /> New patient record</Button></section>
     <section className="metrics" aria-label="Daily summary">
-      <Metric icon={UsersRound} label="Emergency Patients" value={String(records.length)} note="Hospital-wide records" tone="green" />
+      <Metric icon={UsersRound} label="Patients" value={String(records.length)} note="Hospital-wide records" tone="green" />
       <Metric icon={FileScan} label="Report Files" value={String(reportTotal(records))} note="Saved under patient records" tone="orange" />
       <Metric icon={Check} label="Verified Records" value={String(records.filter((record) => record.status === "verified").length)} note="Doctor-approved entries" tone="green" />
       <Metric icon={Clock3} label="Average Entry Time" value={records.length ? "< 3m" : "—"} note="Across submitted entries" tone="teal" />
     </section>
-    <section className="admissions-head"><div><h2>Hospital activity</h2><p>Latest patient records shared by your coworkers.</p></div><Button variant="outline" className="scan-button" onClick={onScan}><FileScan /> Quick scan lab report</Button></section>
+    <section className="records-head"><div><h2>Hospital activity</h2><p>Latest patient records shared by your coworkers.</p></div><Button variant="outline" className="scan-button" onClick={onScan}><FileScan /> Quick scan lab report</Button></section>
     <RecentRecords records={records.slice(0, 5)} onView={onView} onManual={onManual} onScan={onScan} />
   </div>;
 }
@@ -666,7 +666,7 @@ function VerificationQueue({ records, onView, onVerify }: { records: PatientReco
 }
 
 function VerificationWorkspace({ records, onView, onVerify, verifying }: { records: PatientRecord[]; onView: (record: PatientRecord) => void; onVerify: (record: PatientRecord) => void; verifying: boolean }) {
-  return <div className="workspace-page"><PageHeading eyebrow="Clinical review" title="Pending Verification" description="Review nurse-entered values and scanned reports before approving them."><span className="live-badge"><i /> {verifying ? "Verifying…" : `${records.length} waiting`}</span></PageHeading><VerificationQueue records={records} onView={onView} onVerify={onVerify} /></div>;
+  return <div className="workspace-page"><PageHeading eyebrow="Clinical review" title="Pending Verification" description="Review staff-entered values and scanned reports before approving them."><span className="live-badge"><i /> {verifying ? "Verifying…" : `${records.length} waiting`}</span></PageHeading><VerificationQueue records={records} onView={onView} onVerify={onVerify} /></div>;
 }
 
 function TeamWorkspace({ members, currentEmail, onRoleChange, onSave, onRemove }: { members: TeamMember[]; currentEmail: string; onRoleChange: (email: string, role: StaffRole) => void; onSave: (member: TeamMember, status: "active" | "inactive") => void; onRemove: (member: TeamMember) => void }) {
@@ -698,13 +698,13 @@ function PatientsWorkspace({ records, search, onSearch, canCreate, onNew, onView
   </div>;
 }
 
-function EmergencyWorkspace({ records, onManual, onScan, onView }: { records: PatientRecord[]; onManual: () => void; onScan: () => void; onView: (record: PatientRecord) => void }) {
-  return <div className="workspace-page emergency-view">
-    <PageHeading eyebrow="Rapid intake" title="Emergency Admissions" description="Choose the fastest entry method for the report in front of you."><span className="live-badge"><i /> Ready for intake</span></PageHeading>
+function LabRecordsWorkspace({ records, onManual, onScan, onView }: { records: PatientRecord[]; onManual: () => void; onScan: () => void; onView: (record: PatientRecord) => void }) {
+  return <div className="workspace-page lab-records-view">
+    <PageHeading eyebrow="Rapid intake" title="Lab Records" description="Choose the fastest entry method for the report in front of you."><span className="live-badge"><i /> Ready for intake</span></PageHeading>
     <section className="intake-actions"><button onClick={onManual}><span className="action-icon manual"><UserRound /></span><div><small>Option 01</small><h2>Manual entry</h2><p>Open a blank form for any handwritten laboratory report.</p></div><ArrowRight /></button><button onClick={onScan}><span className="action-icon scan"><FileScan /></span><div><small>Option 02</small><h2>Scan or upload</h2><p>Photograph a report, extract its values, then verify every field.</p></div><ArrowRight /></button></section>
     <section className="workflow-strip"><div><span>1</span><strong>Choose method</strong><small>Manual or image</small></div><i /><div><span>2</span><strong>Capture values</strong><small>No fixed entries</small></div><i /><div><span>3</span><strong>Verify & save</strong><small>Human confirmation</small></div></section>
-    <section className="emergency-queue"><div className="section-title"><div><h2>Current emergency queue</h2><p>Recently submitted admissions across your hospital.</p></div><strong>{records.length} total</strong></div>
-      {records.length ? <div className="admission-list">{records.slice(0, 8).map((record, index) => <article key={record.recordId || record.id}><span className="queue-number">{String(index + 1).padStart(2, "0")}</span><PatientCell record={record} /><span className="admission-time"><Clock3 />{new Date(record.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><span className="source-pill">{record.source}</span><Button variant="ghost" onClick={() => onView(record)}>Review <ArrowRight /></Button></article>)}</div> : <div className="simple-empty"><Zap /><h3>Queue is clear</h3><p>New emergency entries will appear here.</p></div>}
+    <section className="records-queue"><div className="section-title"><div><h2>Recent patient records</h2><p>Recently submitted records across your healthcare facility.</p></div><strong>{records.length} total</strong></div>
+      {records.length ? <div className="record-list">{records.slice(0, 8).map((record, index) => <article key={record.recordId || record.id}><span className="queue-number">{String(index + 1).padStart(2, "0")}</span><PatientCell record={record} /><span className="record-time"><Clock3 />{new Date(record.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><span className="source-pill">{record.source}</span><Button variant="ghost" onClick={() => onView(record)}>Review <ArrowRight /></Button></article>)}</div> : <div className="simple-empty"><Zap /><h3>Queue is clear</h3><p>New patient records will appear here.</p></div>}
     </section>
   </div>;
 }
