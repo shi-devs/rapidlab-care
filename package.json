@@ -1,5 +1,5 @@
 {
-  "name": "rapidlab-emergency-records",
+  "name": "rapidlab-care",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -56,5 +56,5 @@
     "typescript": "5.9.3"
   },
   "type": "module",
-  "displayName": "RapidLab Emergency Records"
+  "displayName": "RapidLab Care"
 }

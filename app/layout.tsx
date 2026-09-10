@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "RapidLab Emergency Records",
-  description: "Fast, human-verified laboratory data entry for emergency care.",
+  title: "RapidLab Care",
+  description: "Fast, human-verified laboratory record management for hospitals, clinics and diagnostic centres.",
   icons: { icon: "/favicon.png", shortcut: "/favicon.png" },
 };
 
