@@ -4,6 +4,7 @@ import { labRecords, labReportFiles, recordAudit } from "@/db/schema";
 import { forbidden, logAudit, requireActiveMember, unauthorized } from "@/lib/access";
 import { cleanValues, serializeLabRecord } from "@/lib/lab-records";
 import { deleteReport } from "@/lib/report-storage";
+import { isReportDate } from "@/lib/report-dates";
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const staff = await requireActiveMember();
@@ -13,7 +14,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const [existing] = await getDb().select().from(labRecords).where(and(eq(labRecords.id, id), eq(labRecords.hospitalId, staff.profile.membership.hospitalId))).limit(1);
   if (!existing) return Response.json({ error: "Patient record not found" }, { status: 404 });
   try {
-    const payload = await request.json() as { patientName?: string; patientAge?: string; values?: unknown; assignedToEmail?: string | null };
+    const payload = await request.json() as { patientName?: string; patientAge?: string; reportDate?: string | null; values?: unknown; assignedToEmail?: string | null };
+    if (payload.reportDate != null && !isReportDate(payload.reportDate)) return Response.json({ error: "Select a valid report date" }, { status: 400 });
+    const reportDate = payload.reportDate === undefined ? existing.reportDate : payload.reportDate;
     const patientName = payload.patientName?.trim().slice(0, 120) ?? "";
     const ageText = payload.patientAge?.trim() ?? "";
     const values = cleanValues(payload.values);
@@ -21,11 +24,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const age = ageText && /^\d{1,3}$/.test(ageText) ? Number(ageText) : null;
     if (age !== null && (age < 0 || age > 130)) return Response.json({ error: "Enter a valid patient age" }, { status: 400 });
     const [updated] = await getDb().update(labRecords).set({
-      patientName, patientAge: age, valuesJson: JSON.stringify(values),
+      patientName, patientAge: age, reportDate, valuesJson: JSON.stringify(values),
       assignedToEmail: payload.assignedToEmail?.trim().toLowerCase() || existing.assignedToEmail,
       status: "pending", verifiedByEmail: null, verifiedAt: null, updatedAt: new Date(),
     }).where(eq(labRecords.id, id)).returning();
-    await logAudit({ hospitalId: staff.profile.membership.hospitalId, recordId: id, actorEmail: staff.user.email, actorName: staff.profile.name, action: "record_updated", details: `Updated ${existing.patientCode}; verification reset to pending` });
+    await logAudit({ hospitalId: staff.profile.membership.hospitalId, recordId: id, actorEmail: staff.user.email, actorName: staff.profile.name, action: "record_updated", details: `Updated ${existing.patientCode}; record report date ${reportDate || "not recorded"}; verification reset to pending` });
     const reports = await getDb().select().from(labReportFiles)
       .where(and(eq(labReportFiles.recordId, id), eq(labReportFiles.hospitalId, staff.profile.membership.hospitalId)))
       .orderBy(asc(labReportFiles.createdAt));

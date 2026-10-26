@@ -22,6 +22,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
+import { formatReportDate, isReportDate, todayReportDate } from "@/lib/report-dates";
 
 const TESTS = [
   { key: "haemoglobin", label: "Haemoglobin", unit: "g/dL", aliases: ["haemoglobin", "hemoglobin", "hgb", "hb"] },
@@ -51,8 +52,8 @@ type StaffRole = "nurse" | "doctor" | "admin" | "viewer";
 type MemberStatus = "pending" | "active" | "inactive";
 type NavView = "Dashboard" | "Patients" | "Lab Records" | "Verification" | "Team" | "Activity" | "History" | "Settings";
 type Membership = { hospitalId: string; hospitalName: string; hospitalCode: string; role: StaffRole; status: MemberStatus };
-type ReportAttachment = { id: string; fileName: string; url: string; uploadedAt: string; reportKind?: ReportKind };
-type PatientRecord = { recordId: string; id: string; name: string; age: string; createdAt: string; updatedAt: string; source: "Manual" | "Scan / upload"; values: Values; reports: ReportAttachment[]; reportCount: number; reportFileName?: string | null; reportUrl?: string | null; status: "pending" | "verified"; createdByEmail?: string | null; assignedToEmail?: string | null; verifiedByEmail?: string | null; verifiedAt?: string | null };
+type ReportAttachment = { id: string; fileName: string; url: string; uploadedAt: string; reportDate: string | null; reportKind?: ReportKind };
+type PatientRecord = { recordId: string; id: string; name: string; age: string; reportDate: string | null; createdAt: string; updatedAt: string; source: "Manual" | "Scan / upload"; values: Values; reports: ReportAttachment[]; reportCount: number; reportFileName?: string | null; reportUrl?: string | null; status: "pending" | "verified"; createdByEmail?: string | null; assignedToEmail?: string | null; verifiedByEmail?: string | null; verifiedAt?: string | null };
 type PlatformUser = { email: string; name: string };
 type StaffProfile = { email: string; name: string; staffId: string; membership: Membership | null };
 type ActiveProfile = StaffProfile & { membership: Membership & { status: "active" } };
@@ -284,6 +285,8 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
   const [entryMode, setEntryMode] = useState<EntryMode>("manual");
   const [patientName, setPatientName] = useState("");
   const [patientAge, setPatientAge] = useState("");
+  const [reportDate, setReportDate] = useState(todayReportDate);
+  const [attachmentDate, setAttachmentDate] = useState(todayReportDate);
   const [values, setValues] = useState<Values>(blankValues);
   const [reportFiles, setReportFiles] = useState<File[]>([]);
   const [reportKind, setReportKind] = useState<ReportKind>("printed");
@@ -291,6 +294,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [patientSearch, setPatientSearch] = useState("");
+  const [patientDate, setPatientDate] = useState("");
   const [historyFilter, setHistoryFilter] = useState<"all" | "scan" | "manual">("all");
   const [settingsName, setSettingsName] = useState(profile.name);
   const [settingsStaffId, setSettingsStaffId] = useState(profile.staffId);
@@ -303,10 +307,6 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
   const teamRoleDrafts = useRef(new Set<string>());
   const initials = useMemo(() => staffName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(), [staffName]);
   const dateLabel = useMemo(() => new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date()), []);
-  const visiblePatients = useMemo(() => {
-    const query = patientSearch.trim().toLowerCase();
-    return query ? records.filter((record) => `${record.name} ${record.id}`.toLowerCase().includes(query)) : records;
-  }, [records, patientSearch]);
   const historyRecords = useMemo(() => records.filter((record) => historyFilter === "all" || (historyFilter === "scan" ? record.reports.length > 0 : record.reports.length === 0)), [records, historyFilter]);
 
   const refreshWorkspace = useCallback(async (showErrors = false) => {
@@ -368,10 +368,12 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
   }
 
   function startEntry(mode: EntryMode) {
+    setReportDate(todayReportDate()); setAttachmentDate(todayReportDate());
     setEditingRecord(null); setEntryMode(mode); setPatientName(""); setPatientAge(""); setValues(blankValues()); setReportFiles([]); setReportKind("printed"); setOcrText(""); setOcrProgress(null); setEntryOpen(true);
   }
 
   function startEdit(record: PatientRecord, preferredMode?: EntryMode) {
+    setReportDate(record.reportDate ?? ""); setAttachmentDate(todayReportDate());
     setEditingRecord(record); setEntryMode(preferredMode ?? (record.source === "Manual" ? "manual" : "scan")); setPatientName(record.name); setPatientAge(record.age); setValues(normalizeValues(record.values)); setReportFiles([]); setReportKind("printed"); setOcrText(""); setOcrProgress(null); setSelectedRecord(null); setEntryOpen(true);
   }
 
@@ -462,14 +464,17 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
 
   async function saveRecord() {
     if (!patientName.trim()) return void toast.error("Enter the patient name before saving.");
+    if ((!editingRecord || reportDate) && !isReportDate(reportDate)) return void toast.error("Select a valid report date.");
+    if (editingRecord && reportFiles.length && !isReportDate(attachmentDate)) return void toast.error("Select a valid date for the new reports.");
     setSaving(true);
     try {
       let response: Response;
       if (editingRecord) {
-        response = await fetch(`/api/records/${editingRecord.recordId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patientName: patientName.trim(), patientAge: patientAge.trim(), values }) });
+        response = await fetch(`/api/records/${editingRecord.recordId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patientName: patientName.trim(), patientAge: patientAge.trim(), reportDate: reportDate || null, values }) });
       } else {
         const form = new FormData();
         form.set("patientName", patientName.trim()); form.set("patientAge", patientAge.trim());
+        form.set("reportDate", reportDate);
         form.set("source", entryMode === "manual" ? "Manual" : "Scan / upload"); form.set("reportKind", reportKind); form.set("values", JSON.stringify(values));
         for (const report of reportFiles) form.append("reports", report);
         response = await fetch("/api/records", { method: "POST", body: form });
@@ -480,6 +485,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
       if (editingRecord && reportFiles.length) {
         const reportForm = new FormData();
         reportForm.set("reportKind", reportKind);
+        reportForm.set("reportDate", attachmentDate);
         for (const report of reportFiles) reportForm.append("reports", report);
         const reportResponse = await fetch(`/api/records/${editingRecord.recordId}/reports`, { method: "POST", body: reportForm });
         const reportPayload = await reportResponse.json() as { reports?: ReportAttachment[]; status?: "pending"; updatedAt?: string; error?: string };
@@ -598,7 +604,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
       <header className="topbar"><div className="topbar-left"><SidebarTrigger><Menu /></SidebarTrigger><span>{profile.membership.hospitalName}</span><i>/</i><span className="muted">{view}</span></div><div className="topbar-profile"><Bell /><span className="avatar">{initials}</span><div><strong>{staffName}</strong><small>{roleLabel}</small></div></div></header>
       <main className="dashboard-main">
         {view === "Dashboard" && <RoleDashboard profile={profile} dateLabel={dateLabel} records={records} team={team} activity={activity} onManual={() => startEntry("manual")} onScan={() => startEntry("scan")} onView={setSelectedRecord} onVerify={verifyRecord} />}
-        {view === "Patients" && <PatientsWorkspace records={visiblePatients} search={patientSearch} onSearch={setPatientSearch} canCreate={role !== "viewer"} onNew={() => startEntry("manual")} onView={setSelectedRecord} />}
+        {view === "Patients" && <PatientsWorkspace records={records} search={patientSearch} onSearch={setPatientSearch} date={patientDate} onDate={setPatientDate} canCreate={role !== "viewer"} onNew={() => startEntry("manual")} onView={setSelectedRecord} />}
         {view === "Lab Records" && <LabRecordsWorkspace records={records} onManual={() => startEntry("manual")} onScan={() => startEntry("scan")} onView={setSelectedRecord} />}
         {view === "Verification" && <VerificationWorkspace records={records.filter((record) => record.status === "pending")} onView={setSelectedRecord} onVerify={verifyRecord} verifying={verifying} />}
         {view === "Team" && <TeamWorkspace members={team} currentEmail={profile.email} onRoleChange={changeMemberRole} onSave={saveMember} onRemove={removeMember} />}
@@ -621,7 +627,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
           <span>{reportKind === "printed" ? <FileScan /> : <FileImage />}</span><div><strong>{reportFiles.length ? `${reportFiles.length} new ${reportKind} report${reportFiles.length === 1 ? "" : "s"} selected` : reportKind === "printed" ? "Scan or upload printed lab reports" : "Upload handwritten or mixed lab reports"}</strong><p>{reportKind === "printed" ? "Choose up to 8 clear JPG, PNG, WebP or PDF files totalling under 4 MB. RapidLab will try to extract values from supported images." : "Choose up to 8 JPG, PNG, WebP or PDF files totalling under 4 MB. The files will be saved without OCR extraction."}</p></div><div><Button type="button" onClick={() => cameraRef.current?.click()}><Camera /> Scan another</Button><Button type="button" variant="outline" onClick={() => uploadRef.current?.click()}><Upload /> Upload multiple</Button></div>
         </div>{reportFiles.length ? <div className="pending-report-list">{reportFiles.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`}><FileImage /><span><strong>{file.name}</strong><small>{(file.size / 1024 / 1024).toFixed(1)} MB · {reportKind === "handwritten" ? "handwritten · extraction skipped" : "printed · ready to save"}</small></span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setReportFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X /></button></div>)}</div> : null}{reportKind === "handwritten" && reportFiles.length > 0 && <div className="extraction-skipped-note"><ShieldCheck /><span><strong>Automatic extraction skipped</strong><small>The original report will be saved under this patient. No laboratory value will be guessed.</small></span></div>}{reportKind === "printed" && ocrProgress !== null && <div className="ocr-progress"><span style={{ width: `${ocrProgress}%` }} /><p>{ocrProgress < 100 ? <><LoaderCircle className="spin" /> Reading reports… {ocrProgress}%</> : <><Check /> Extraction complete — verify all results below</>}</p></div>}{reportKind === "printed" && ocrText && <details className="ocr-raw"><summary>View detected report text</summary><pre>{ocrText}</pre></details>}</TabsContent>
       </Tabs>
-      <div className="patient-fields"><Field label="Patient name" value={patientName} onChange={setPatientName} placeholder="Enter or verify patient name" /><Field label="Age (years)" value={patientAge} onChange={setPatientAge} placeholder="Enter or verify age" /></div>
+      <div className="patient-fields"><Field label="Patient name" value={patientName} onChange={setPatientName} placeholder="Enter or verify patient name" /><Field label="Age (years)" value={patientAge} onChange={setPatientAge} placeholder="Enter or verify age" /><label className="field"><span>{editingRecord ? "Record report date" : "Report date"}</span><Input type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} required={!editingRecord} min="0001-01-01" max="9999-12-31" /><small>{editingRecord ? "Date for this record. Attached files keep their own dates." : "Select the date written on the report. Files saved together use this date."}</small></label>{editingRecord && entryMode === "scan" && <label className="field"><span>New reports date</span><Input type="date" value={attachmentDate} onChange={(event) => setAttachmentDate(event.target.value)} required={reportFiles.length > 0} min="0001-01-01" max="9999-12-31" /><small>Applies only to the files you are adding now. Add different dates in separate uploads.</small></label>}</div>
       {entryMode === "scan" && reportKind === "handwritten" ? <section className="handwritten-results-note" aria-label="Handwritten report extraction status"><FileImage /><div><h3>No automatic laboratory results</h3><p>RapidLab will save the original handwritten or mixed report. Staff can open it later from the patient record.</p></div></section> : <section className="additional-tests" aria-label="Additional laboratory results">
         <div className="additional-tests-head"><div><h3>Laboratory results</h3><p>Only tests found in the uploaded report appear here. Check the results, or add another test manually.</p></div><Button type="button" variant="outline" onClick={addAdditionalTest}><Plus /> Add test</Button></div>
         {values.additionalTests.length ? <div className="additional-test-list">{values.additionalTests.map((test, index) => <div className="additional-test-row" key={`${test.testName}-${index}`}>
@@ -637,9 +643,9 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
     <Dialog open={Boolean(selectedRecord)} onOpenChange={(open) => { if (!open) setSelectedRecord(null); }}><DialogContent className="record-dialog">
       {selectedRecord && <>
         <DialogHeader><DialogTitle>{selectedRecord.name}</DialogTitle><DialogDescription>{selectedRecord.id} · {selectedRecord.age ? `${selectedRecord.age} years` : "Age not entered"} · {new Date(selectedRecord.createdAt).toLocaleString()}</DialogDescription></DialogHeader>
-        <div className="record-summary"><span><strong>Entry method</strong>{selectedRecord.source}</span><span><strong>Status</strong><b className={`record-status ${selectedRecord.status}`}>{selectedRecord.status === "verified" ? "Verified" : "Pending verification"}</b></span><span><strong>Created by</strong>{selectedRecord.createdByEmail || "Hospital staff"}</span><span><strong>Last updated</strong>{new Date(selectedRecord.updatedAt).toLocaleString()}</span></div>
+        <div className="record-summary"><span><strong>Report date</strong>{formatReportDate(selectedRecord.reportDate)}</span><span><strong>Entry method</strong>{selectedRecord.source}</span><span><strong>Status</strong><b className={`record-status ${selectedRecord.status}`}>{selectedRecord.status === "verified" ? "Verified" : "Pending verification"}</b></span><span><strong>Created by</strong>{selectedRecord.createdByEmail || "Hospital staff"}</span><span><strong>Last updated</strong>{new Date(selectedRecord.updatedAt).toLocaleString()}</span></div>
         <div className="record-values">{normalizeValues(selectedRecord.values).additionalTests.map((test, index) => <div key={`${test.testName}-${index}`}><span>{test.testName}<small>{[test.unit, test.referenceRange ? `Range: ${test.referenceRange}` : ""].filter(Boolean).join(" · ")}</small></span><strong>{test.value || "—"}</strong></div>)}</div>
-        <section className="report-collection"><div className="report-collection-head"><div><FileImage /><span><strong>Patient lab reports</strong><small>{selectedRecord.reports.length ? `${selectedRecord.reports.length} saved file${selectedRecord.reports.length === 1 ? "" : "s"}` : "No reports attached"}</small></span></div>{role !== "viewer" && <Button variant="outline" size="sm" onClick={() => startEdit(selectedRecord, "scan")}><Plus /> Add reports</Button>}</div>{selectedRecord.reports.length ? <div className="saved-report-list">{selectedRecord.reports.map((report, index) => <div key={report.id}><span><FileCheck2 /><strong>{report.reportKind === "handwritten" ? "Handwritten report" : report.reportKind === "printed" ? "Printed report" : "Report"} {index + 1}</strong><small>{report.fileName} · {report.reportKind === "handwritten" ? "extraction skipped · " : ""}{new Date(report.uploadedAt).toLocaleString()}</small></span><div className="saved-report-actions"><Button asChild size="sm"><a href={report.url} target="_blank" rel="noreferrer">Open <ExternalLink /></a></Button>{role !== "viewer" && <Button variant="destructive" size="sm" className="remove-staff-button" aria-label={`Delete ${report.fileName}`} onClick={() => setDeleteTarget({ type: "report", record: selectedRecord, report })}><Trash2 /> Delete</Button>}</div></div>)}</div> : <p className="no-report-copy">Use “Add reports” to attach the patient’s lab report images or PDFs.</p>}</section>
+        <section className="report-collection"><div className="report-collection-head"><div><FileImage /><span><strong>Patient lab reports</strong><small>{selectedRecord.reports.length ? `${selectedRecord.reports.length} saved file${selectedRecord.reports.length === 1 ? "" : "s"}` : "No reports attached"}</small></span></div>{role !== "viewer" && <Button variant="outline" size="sm" onClick={() => startEdit(selectedRecord, "scan")}><Plus /> Add reports</Button>}</div>{selectedRecord.reports.length ? <div className="saved-report-list">{selectedRecord.reports.map((report, index) => <div key={report.id}><span><FileCheck2 /><strong>{report.reportKind === "handwritten" ? "Handwritten report" : report.reportKind === "printed" ? "Printed report" : "Report"} {index + 1}</strong><small>{report.fileName} · Report date: {formatReportDate(report.reportDate)} · {report.reportKind === "handwritten" ? "extraction skipped · " : ""}Uploaded: {new Date(report.uploadedAt).toLocaleString()}</small></span><div className="saved-report-actions"><Button asChild size="sm"><a href={report.url} target="_blank" rel="noreferrer">Open <ExternalLink /></a></Button>{role !== "viewer" && <Button variant="destructive" size="sm" className="remove-staff-button" aria-label={`Delete ${report.fileName}`} onClick={() => setDeleteTarget({ type: "report", record: selectedRecord, report })}><Trash2 /> Delete</Button>}</div></div>)}</div> : <p className="no-report-copy">Use “Add reports” to attach the patient’s lab report images or PDFs.</p>}</section>
         <div className="record-dialog-actions">{role !== "viewer" && <Button variant="destructive" className="record-delete-button" onClick={() => setDeleteTarget({ type: "record", record: selectedRecord })}><Trash2 /> Delete patient record</Button>}{role !== "viewer" && <Button variant="outline" onClick={() => startEdit(selectedRecord)}><Pencil /> Edit patient details</Button>}{(role === "doctor" || role === "admin") && selectedRecord.status === "pending" && <Button onClick={() => verifyRecord(selectedRecord)} disabled={verifying}>{verifying ? <LoaderCircle className="spin" /> : <ClipboardCheck />} Verify record</Button>}</div>
       </>}
     </DialogContent></Dialog>
@@ -708,13 +714,43 @@ function AuditList({ activity }: { activity: AuditEvent[] }) {
   return activity.length ? <div className="audit-list">{activity.map((event) => <article key={event.id}><span className={`audit-icon ${event.action}`}><ListChecks /></span><div><strong>{event.details}</strong><small>{event.actorName} · {event.actorEmail}</small></div><time>{new Date(event.createdAt).toLocaleString()}</time></article>)}</div> : <div className="compact-empty"><ListChecks /><span><strong>No activity yet</strong><small>Hospital actions will appear here.</small></span></div>;
 }
 
-function PatientsWorkspace({ records, search, onSearch, canCreate, onNew, onView }: { records: PatientRecord[]; search: string; onSearch: (value: string) => void; canCreate: boolean; onNew: () => void; onView: (record: PatientRecord) => void }) {
-  const scanned = reportTotal(records);
+function PatientsWorkspace({ records, search, onSearch, date, onDate, canCreate, onNew, onView }: { records: PatientRecord[]; search: string; onSearch: (value: string) => void; date: string; onDate: (value: string) => void; canCreate: boolean; onNew: () => void; onView: (record: PatientRecord) => void }) {
+  const query = search.trim();
+  const filtering = Boolean(query || date);
+  const searchKey = JSON.stringify([query, date]);
+  const [result, setResult] = useState<{ key: string; records: PatientRecord[]; hasMore: boolean; error?: string } | null>(null);
+
+  useEffect(() => {
+    if (!filtering) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        if (date && !isReportDate(date)) throw new Error("Select a valid report date.");
+        const params = new URLSearchParams({ q: query, reportDate: date });
+        const response = await fetch(`/api/records?${params}`, { cache: "no-store", signal: controller.signal });
+        const payload = await response.json() as { records?: PatientRecord[]; hasMore?: boolean; error?: string };
+        if (!response.ok) throw new Error(payload.error || "Could not search patient records");
+        if (!controller.signal.aborted) setResult({ key: searchKey, records: payload.records ?? [], hasMore: Boolean(payload.hasMore) });
+      } catch (error) {
+        if (!controller.signal.aborted) setResult({ key: searchKey, records: [], hasMore: false, error: error instanceof Error ? error.message : "Could not search patient records" });
+      }
+    }, 250);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+    // Shared-record refreshes also refresh active search results.
+  }, [query, date, searchKey, filtering, records]);
+
+  const currentResult = result?.key === searchKey ? result : null;
+  const loading = filtering && !currentResult;
+  const error = filtering ? currentResult?.error : undefined;
+  const matches = filtering ? currentResult?.records ?? [] : records;
+  const scanned = reportTotal(matches);
+  const clearFilters = () => { onSearch(""); onDate(""); };
   return <div className="workspace-page patients-view">
     <PageHeading eyebrow="Hospital patient directory" title="Patients" description="Find records shared by authorized staff in this hospital.">{canCreate && <Button onClick={onNew}><Plus /> Add patient record</Button>}</PageHeading>
-    <section className="patient-insights"><article><UsersRound /><div><strong>{records.length}</strong><span>Matching records</span></div></article><article><FileImage /><div><strong>{scanned}</strong><span>Saved report files</span></div></article><article><UserCheck /><div><strong>{records.length}</strong><span>Patient entries</span></div></article></section>
-    <section className="directory-card"><div className="directory-toolbar"><div><h2>Patient list</h2><p>Search by patient name or record ID.</p></div><label className="search-box"><Search /><Input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search patients…" /></label></div>
-      {records.length ? <Table><TableHeader><TableRow><TableHead>Patient</TableHead><TableHead>Record ID</TableHead><TableHead>Age</TableHead><TableHead>Created by</TableHead><TableHead>Status</TableHead><TableHead>Reports</TableHead><TableHead></TableHead></TableRow></TableHeader><TableBody>{records.map((record) => <TableRow key={record.recordId || record.id}><TableCell><PatientCell record={record} /></TableCell><TableCell>{record.id}</TableCell><TableCell>{record.age || "—"}</TableCell><TableCell>{record.createdByEmail || "Hospital staff"}</TableCell><TableCell><span className={`record-status ${record.status}`}>{record.status}</span></TableCell><TableCell>{record.reports.length ? <span className="file-status"><FileImage /> {record.reports.length} saved</span> : <span className="muted-status">No images</span>}</TableCell><TableCell><Button variant="outline" size="sm" onClick={() => onView(record)}>Open patient</Button></TableCell></TableRow>)}</TableBody></Table> : <div className="simple-empty"><Search /><h3>{search ? "No matching patients" : "No patients yet"}</h3><p>{search ? "Try a different patient name or record ID." : "Patient records will appear when clinical staff submit them."}</p>{!search && canCreate && <Button onClick={onNew}><Plus /> Add patient</Button>}</div>}
+    <section className="patient-insights"><article><UsersRound /><div><strong>{loading ? "…" : matches.length}</strong><span>Matching records</span></div></article><article><FileImage /><div><strong>{loading ? "…" : scanned}</strong><span>Saved report files</span></div></article><article><UserCheck /><div><strong>{loading ? "…" : matches.length}</strong><span>Patient entries</span></div></article></section>
+    <section className="directory-card"><div className="directory-toolbar"><div><h2>Patient list</h2><p>Search by name, record ID or report date. Combine them to narrow results.</p></div><div className="patient-search-filters"><label className="search-box"><Search /><Input aria-label="Search patients by name or record ID" value={search} maxLength={120} onChange={(event) => onSearch(event.target.value)} placeholder="Name or record ID…" /></label><label className="date-filter"><span>Report date</span><Input type="date" value={date} onChange={(event) => onDate(event.target.value)} min="0001-01-01" max="9999-12-31" /></label>{filtering && <Button variant="outline" size="sm" onClick={clearFilters}><X /> Clear filters</Button>}</div></div>
+      <p className="search-date-note">{currentResult?.hasMore && filtering ? "More than 200 matches. Add a name or date to narrow your search." : "Showing up to 200 records. Date search includes reports added later. Older reports without a saved date appear when the date filter is cleared."}</p>
+      <div aria-live="polite" aria-busy={loading}>{loading ? <div className="simple-empty"><LoaderCircle className="spin" /><p>Searching patient records…</p></div> : error ? <div className="simple-empty"><Search /><h3>Search could not be completed</h3><p>{error}</p><Button variant="outline" onClick={clearFilters}>Clear filters</Button></div> : matches.length ? <Table><TableHeader><TableRow><TableHead>Patient</TableHead><TableHead>Record ID</TableHead><TableHead>Age</TableHead><TableHead>Report dates</TableHead><TableHead>Created by</TableHead><TableHead>Status</TableHead><TableHead>Reports</TableHead><TableHead></TableHead></TableRow></TableHeader><TableBody>{matches.map((record) => <TableRow key={record.recordId || record.id}><TableCell><PatientCell record={record} /></TableCell><TableCell>{record.id}</TableCell><TableCell>{record.age || "—"}</TableCell><TableCell className="patient-report-dates">{Array.from(new Set([record.reportDate, ...record.reports.map((report) => report.reportDate)].filter((value): value is string => Boolean(value)))).map(formatReportDate).join(" · ") || "Not recorded"}</TableCell><TableCell>{record.createdByEmail || "Hospital staff"}</TableCell><TableCell><span className={`record-status ${record.status}`}>{record.status}</span></TableCell><TableCell>{record.reports.length ? <span className="file-status"><FileImage /> {record.reports.length} saved</span> : <span className="muted-status">No images</span>}</TableCell><TableCell><Button variant="outline" size="sm" onClick={() => onView(record)}>Open patient</Button></TableCell></TableRow>)}</TableBody></Table> : <div className="simple-empty"><Search /><h3>{filtering ? "No matching patients" : "No patients yet"}</h3><p>{filtering ? "Try a different patient name, record ID or report date." : "Patient records will appear when clinical staff submit them."}</p>{filtering ? <Button variant="outline" onClick={clearFilters}>Clear filters</Button> : canCreate && <Button onClick={onNew}><Plus /> Add patient</Button>}</div>}</div>
     </section>
   </div>;
 }

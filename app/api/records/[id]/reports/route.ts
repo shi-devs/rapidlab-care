@@ -4,6 +4,7 @@ import { labRecords, labReportFiles } from "@/db/schema";
 import { forbidden, logAudit, requireActiveMember, unauthorized } from "@/lib/access";
 import { createReportFileKey, normalizeReportKind, validateReportFiles } from "@/lib/lab-records";
 import { deleteReport, uploadReport } from "@/lib/report-storage";
+import { isReportDate } from "@/lib/report-dates";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const staff = await requireActiveMember();
@@ -20,6 +21,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     const form = await request.formData();
     const reportKind = normalizeReportKind(form.get("reportKind"));
+    const reportDate = form.get("reportDate");
+    if (!isReportDate(reportDate)) return Response.json({ error: "Select a valid date for the new reports" }, { status: 400 });
     const reports = form.getAll("reports").filter((value): value is File => value instanceof File && value.size > 0);
     if (!reports.length) return Response.json({ error: "Choose at least one report file" }, { status: 400 });
     const fileError = validateReportFiles(reports);
@@ -35,14 +38,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       await uploadReport(fileKey, await report.arrayBuffer(), report.type);
       uploadedKeys.push(fileKey);
       insertedIds.push(reportId);
-      storedReports.push({ id: reportId, recordId: id, hospitalId, fileKey, fileName, contentType: report.type, uploadedByEmail: staff.user.email, createdAt: now });
+      storedReports.push({ id: reportId, recordId: id, hospitalId, fileKey, fileName, contentType: report.type, uploadedByEmail: staff.user.email, reportDate, createdAt: now });
     }
 
     await getDb().insert(labReportFiles).values(storedReports);
     await getDb().update(labRecords).set({ source: "Scan / upload", status: "pending", verifiedByEmail: null, verifiedAt: null, updatedAt: now }).where(eq(labRecords.id, id));
-    await logAudit({ hospitalId, recordId: id, actorEmail: staff.user.email, actorName: staff.profile.name, action: "reports_added", details: `Added ${reports.length} ${reportKind} report file${reports.length === 1 ? "" : "s"} to ${record.patientCode}${reportKind === "handwritten" ? "; extraction skipped" : ""}` });
+    await logAudit({ hospitalId, recordId: id, actorEmail: staff.user.email, actorName: staff.profile.name, action: "reports_added", details: `Added ${reports.length} ${reportKind} report file${reports.length === 1 ? "" : "s"} dated ${reportDate} to ${record.patientCode}${reportKind === "handwritten" ? "; extraction skipped" : ""}` });
     return Response.json({
-      reports: storedReports.map((report) => ({ id: report.id, fileName: report.fileName, url: `/api/records/${id}/reports/${report.id}`, uploadedAt: now.toISOString(), reportKind })),
+      reports: storedReports.map((report) => ({ id: report.id, fileName: report.fileName, url: `/api/records/${id}/reports/${report.id}`, uploadedAt: now.toISOString(), reportDate, reportKind })),
       status: "pending",
       updatedAt: now.toISOString(),
     }, { status: 201 });

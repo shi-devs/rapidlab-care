@@ -1,4 +1,4 @@
-import { index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { date, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 const dateColumn = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 
@@ -25,6 +25,7 @@ export const labRecords = pgTable("lab_records", {
   patientCode: text("patient_code").notNull(),
   patientName: text("patient_name").notNull(),
   patientAge: integer("patient_age"),
+  reportDate: date("report_date", { mode: "string" }),
   source: text("source").notNull(),
   valuesJson: text("values_json").notNull(),
   reportFileKey: text("report_file_key"),
@@ -38,7 +39,9 @@ export const labRecords = pgTable("lab_records", {
   verifiedAt: dateColumn("verified_at"),
   updatedAt: dateColumn("updated_at"),
   createdAt: dateColumn("created_at").notNull(),
-});
+}, (table) => [
+  index("idx_lab_records_hospital_report_date").on(table.hospitalId, table.reportDate),
+]);
 
 export const labReportFiles = pgTable("lab_report_files", {
   id: text("id").primaryKey(),
@@ -48,10 +51,12 @@ export const labReportFiles = pgTable("lab_report_files", {
   fileName: text("file_name").notNull(),
   contentType: text("content_type").notNull(),
   uploadedByEmail: text("uploaded_by_email").notNull(),
+  reportDate: date("report_date", { mode: "string" }),
   createdAt: dateColumn("created_at").notNull(),
 }, (table) => [
   index("idx_lab_report_files_hospital_id").on(table.hospitalId),
   index("idx_lab_report_files_record_id").on(table.recordId),
+  index("idx_lab_report_files_hospital_report_date").on(table.hospitalId, table.reportDate),
 ]);
 
 export const staffProfiles = pgTable("staff_profiles", {

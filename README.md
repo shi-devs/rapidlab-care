@@ -25,6 +25,8 @@ RapidLab Care simplifies this process by allowing authorised staff to upload mul
 * Handwritten or mixed reports are saved without automatic extraction to prevent guessed values
 * Review and correct extracted values before saving
 * Save a report even when no laboratory value is extracted
+* Select the report date when creating a record or adding report files later
+* Search patients by name, record ID and report date together
 * Store reports using the patient’s name, age, date and hospital
 * View complete patient history from authorised staff accounts
 * Verify reports through doctors, supervisors or hospital administrators
@@ -86,3 +88,24 @@ RapidLab Care is a working academic prototype created using the Human-Centred De
 ## Data Security
 
 Database credentials, email-service keys and other sensitive settings are managed through environment variables and are not included in the public source code.
+
+## Report date update
+
+For an **existing deployment**, first run the following in the Supabase SQL Editor, then deploy the updated code:
+
+```sql
+alter table public.lab_records add column if not exists report_date date;
+alter table public.lab_report_files add column if not exists report_date date;
+create index if not exists idx_lab_records_hospital_report_date on public.lab_records (hospital_id, report_date);
+create index if not exists idx_lab_report_files_hospital_report_date on public.lab_report_files (hospital_id, report_date);
+```
+
+The same additive migration is in `drizzle-postgres/0001_report_dates.sql`. New installations can use `supabase-setup.sql` as usual. Existing records and files are retained; dates that were never recorded remain blank rather than being inferred from upload times.
+
+- **Upload:** choose **Report date** before saving a new record. It defaults to today and can be changed to the date written on the report. Every file in that upload receives the selected date. For reports from different dates, save them in separate batches.
+- **Add reports later:** open the patient, choose **Add reports**, and set **New reports date**. Previously saved attachments keep their dates. The separate **Record report date** can be corrected without changing attachment dates.
+- **Search:** open **Patients**, enter a name or record ID, choose **Report date**, or combine these filters. A patient matches if the record date or any attached report date matches. Filters are applied on the server before the 200-record display limit, including reports on older patient records. More than 200 matches produce a message asking for narrower filters.
+- **Clear filters:** restores the recent patient list. Historical reports with no known date remain available without a date filter and display **Not recorded**.
+- Dates use calendar values (`YYYY-MM-DD`) and display as `DD/MM/YYYY`, so a timezone conversion cannot move the report to another day. Upload timestamps remain separate.
+
+Validation: `npm test` builds the app and runs the regression tests; `npm run lint` checks the source. No production credentials or patient data are required for the tests.
