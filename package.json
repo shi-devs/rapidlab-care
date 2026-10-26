@@ -9,7 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "npm run build && node --test tests/delete-records.test.mjs tests/live-sync.test.mjs tests/report-files.test.mjs",
+    "test": "npm run build && node --test tests/delete-records.test.mjs tests/live-sync.test.mjs tests/report-files.test.mjs tests/report-dates.test.mjs",
     "lint": "eslint . --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
@@ -48,6 +48,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "drizzle-kit": "0.31.10",
+    "esbuild": "0.28.0",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
     "react-server-dom-webpack": "19.2.6",

@@ -21,6 +21,7 @@ create table if not exists public.lab_records (
   patient_code text not null,
   patient_name text not null,
   patient_age integer,
+  report_date date,
   source text not null,
   values_json text not null,
   report_file_key text,
@@ -44,8 +45,15 @@ create table if not exists public.lab_report_files (
   file_name text not null,
   content_type text not null,
   uploaded_by_email text not null,
+  report_date date,
   created_at timestamptz not null
 );
+
+-- Also upgrade existing installations; historical report dates remain unknown.
+alter table public.lab_records add column if not exists report_date date;
+alter table public.lab_report_files add column if not exists report_date date;
+create index if not exists idx_lab_records_hospital_report_date on public.lab_records (hospital_id, report_date);
+create index if not exists idx_lab_report_files_hospital_report_date on public.lab_report_files (hospital_id, report_date);
 
 create table if not exists public.staff_profiles (
   email text primary key,

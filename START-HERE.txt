@@ -1,3 +1,19 @@
+REPORT DATE FEATURE — EXISTING PROJECT
+=====================================
+
+1. In Supabase -> SQL Editor -> New query, run the SQL from
+   drizzle-postgres/0001_report_dates.sql before deploying this update.
+   This adds date fields and indexes. Existing patient data is preserved.
+2. Update the project files in your GitHub repository, then let Vercel deploy.
+3. Upload a report: select Report date before saving.
+4. Open Patients: combine a name/record ID with the Report date filter.
+5. For an existing patient, Add reports has its own New reports date.
+
+Older reports with no saved date show Not recorded. Clear the date filter
+to find them. Dates are not guessed from their upload time.
+
+For a brand-new installation, follow the original setup below.
+
 RAPIDLAB: DEPLOY THIS FIXED VERSION TO VERCEL
 ================================================
 

@@ -56,12 +56,14 @@ export function serializeLabRecord(
       fileName: row.reportFileName || "lab-report",
       url: `/api/records/${row.id}/report`,
       uploadedAt: row.createdAt.toISOString(),
+      reportDate: null, // Legacy files have no separately recorded report date.
     }] : []),
     ...storedReports.map((report) => ({
       id: report.id,
       fileName: report.fileName,
       url: `/api/records/${row.id}/reports/${report.id}`,
       uploadedAt: report.createdAt.toISOString(),
+      reportDate: report.reportDate,
       reportKind: reportKindFromFileKey(report.fileKey),
     })),
   ];
@@ -71,6 +73,7 @@ export function serializeLabRecord(
     recordId: row.id,
     name: row.patientName,
     age: row.patientAge === null ? "" : String(row.patientAge),
+    reportDate: row.reportDate,
     source: row.source,
     values,
     createdAt: row.createdAt.toISOString(),
