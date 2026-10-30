@@ -24,6 +24,8 @@ RapidLab Care simplifies this process by allowing authorised staff to upload mul
 * OCR-assisted extraction of laboratory values from clear printed report images
 * Handwritten or mixed reports are saved without automatic extraction to prevent guessed values
 * Review and correct extracted values before saving
+* Show a red warning icon and High label beside numeric results above the report's reference range, during entry and when viewing saved records
+* Use the reference range in the same units as the result; missing or unrecognised ranges are not automatically classified
 * Save a report even when no laboratory value is extracted
 * Select the report date when creating a record or adding report files later
 * Search patients by name, record ID and report date together

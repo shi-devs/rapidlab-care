@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity, ArrowRight, BadgeCheck, Bell, Building2, CalendarDays, Camera, Check,
+  Activity, ArrowRight, TriangleAlert, BadgeCheck, Bell, Building2, CalendarDays, Camera, Check,
   ClipboardCheck, ClipboardCopy, Clock3, ExternalLink, Eye, EyeOff, FileCheck2, FileImage,
   FileScan, History, LayoutDashboard, ListChecks, LoaderCircle, LockKeyhole, LogOut,
   Menu, Pencil, Plus, Save, Search, Settings, ShieldCheck, Stethoscope, Trash2, Upload,
@@ -23,6 +23,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
 import { formatReportDate, isReportDate, todayReportDate } from "@/lib/report-dates";
+
+import { isAboveReferenceRange } from "@/lib/result-warnings";
+
+function HighResultWarning({ value, referenceRange }: { value: string; referenceRange: string }) {
+  if (!isAboveReferenceRange(value, referenceRange)) return null;
+  return <span className="high-result-warning" role="status" title={`Above reference range: ${referenceRange}. Check the original report and units.`}><TriangleAlert aria-hidden="true" /><span>High<span className="sr-only">: above reference range {referenceRange}</span></span></span>;
+}
 
 const TESTS = [
   { key: "haemoglobin", label: "Haemoglobin", unit: "g/dL", aliases: ["haemoglobin", "hemoglobin", "hgb", "hb"] },
@@ -629,12 +636,12 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
       </Tabs>
       <div className="patient-fields"><Field label="Patient name" value={patientName} onChange={setPatientName} placeholder="Enter or verify patient name" /><Field label="Age (years)" value={patientAge} onChange={setPatientAge} placeholder="Enter or verify age" /><label className="field"><span>{editingRecord ? "Record report date" : "Report date"}</span><Input type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} required={!editingRecord} min="0001-01-01" max="9999-12-31" /><small>{editingRecord ? "Date for this record. Attached files keep their own dates." : "Select the date written on the report. Files saved together use this date."}</small></label>{editingRecord && entryMode === "scan" && <label className="field"><span>New reports date</span><Input type="date" value={attachmentDate} onChange={(event) => setAttachmentDate(event.target.value)} required={reportFiles.length > 0} min="0001-01-01" max="9999-12-31" /><small>Applies only to the files you are adding now. Add different dates in separate uploads.</small></label>}</div>
       {entryMode === "scan" && reportKind === "handwritten" ? <section className="handwritten-results-note" aria-label="Handwritten report extraction status"><FileImage /><div><h3>No automatic laboratory results</h3><p>RapidLab will save the original handwritten or mixed report. Staff can open it later from the patient record.</p></div></section> : <section className="additional-tests" aria-label="Additional laboratory results">
-        <div className="additional-tests-head"><div><h3>Laboratory results</h3><p>Only tests found in the uploaded report appear here. Check the results, or add another test manually.</p></div><Button type="button" variant="outline" onClick={addAdditionalTest}><Plus /> Add test</Button></div>
+        <div className="additional-tests-head"><div><h3>Laboratory results</h3><p>Only tests found in the uploaded report appear here. Check the results, or add another test manually. Use the report's reference range in the same units; a red High warning marks results above it.</p></div><Button type="button" variant="outline" onClick={addAdditionalTest}><Plus /> Add test</Button></div>
         {values.additionalTests.length ? <div className="additional-test-list">{values.additionalTests.map((test, index) => <div className="additional-test-row" key={`${test.testName}-${index}`}>
           <label><span>Test name</span><Input value={test.testName} onChange={(event) => updateAdditionalTest(index, "testName", event.target.value)} placeholder="Example: TSH" /></label>
-          <label><span>Result</span><Input value={test.value} onChange={(event) => updateAdditionalTest(index, "value", event.target.value)} placeholder="Value" /></label>
+          <label><span className="result-label">Result <HighResultWarning value={test.value} referenceRange={test.referenceRange} /></span><Input value={test.value} onChange={(event) => updateAdditionalTest(index, "value", event.target.value)} placeholder="Value" /></label>
           <label><span>Unit</span><Input value={test.unit} onChange={(event) => updateAdditionalTest(index, "unit", event.target.value)} placeholder="Unit" /></label>
-          <label><span>Reference range</span><Input value={test.referenceRange} onChange={(event) => updateAdditionalTest(index, "referenceRange", event.target.value)} placeholder="Range" /></label>
+          <label><span>Reference range</span><Input value={test.referenceRange} onChange={(event) => updateAdditionalTest(index, "referenceRange", event.target.value)} placeholder="Example: 4 - 10" /></label>
           <button className="remove-additional-test" type="button" aria-label={`Remove ${test.testName || "additional test"}`} onClick={() => removeAdditionalTest(index)}><Trash2 /></button>
         </div>)}</div> : <p className="additional-tests-empty">No laboratory results yet. Upload a report or select “Add test”.</p>}
       </section>}
@@ -644,7 +651,7 @@ function Dashboard({ profile, onProfileChange, onLogout }: { profile: ActiveProf
       {selectedRecord && <>
         <DialogHeader><DialogTitle>{selectedRecord.name}</DialogTitle><DialogDescription>{selectedRecord.id} · {selectedRecord.age ? `${selectedRecord.age} years` : "Age not entered"} · {new Date(selectedRecord.createdAt).toLocaleString()}</DialogDescription></DialogHeader>
         <div className="record-summary"><span><strong>Report date</strong>{formatReportDate(selectedRecord.reportDate)}</span><span><strong>Entry method</strong>{selectedRecord.source}</span><span><strong>Status</strong><b className={`record-status ${selectedRecord.status}`}>{selectedRecord.status === "verified" ? "Verified" : "Pending verification"}</b></span><span><strong>Created by</strong>{selectedRecord.createdByEmail || "Hospital staff"}</span><span><strong>Last updated</strong>{new Date(selectedRecord.updatedAt).toLocaleString()}</span></div>
-        <div className="record-values">{normalizeValues(selectedRecord.values).additionalTests.map((test, index) => <div key={`${test.testName}-${index}`}><span>{test.testName}<small>{[test.unit, test.referenceRange ? `Range: ${test.referenceRange}` : ""].filter(Boolean).join(" · ")}</small></span><strong>{test.value || "—"}</strong></div>)}</div>
+        <div className="record-values">{normalizeValues(selectedRecord.values).additionalTests.map((test, index) => <div key={`${test.testName}-${index}`}><span>{test.testName}<small>{[test.unit, test.referenceRange ? `Range: ${test.referenceRange}` : ""].filter(Boolean).join(" · ")}</small></span><strong className="result-with-warning">{test.value || "—"}<HighResultWarning value={test.value} referenceRange={test.referenceRange} /></strong></div>)}</div>
         <section className="report-collection"><div className="report-collection-head"><div><FileImage /><span><strong>Patient lab reports</strong><small>{selectedRecord.reports.length ? `${selectedRecord.reports.length} saved file${selectedRecord.reports.length === 1 ? "" : "s"}` : "No reports attached"}</small></span></div>{role !== "viewer" && <Button variant="outline" size="sm" onClick={() => startEdit(selectedRecord, "scan")}><Plus /> Add reports</Button>}</div>{selectedRecord.reports.length ? <div className="saved-report-list">{selectedRecord.reports.map((report, index) => <div key={report.id}><span><FileCheck2 /><strong>{report.reportKind === "handwritten" ? "Handwritten report" : report.reportKind === "printed" ? "Printed report" : "Report"} {index + 1}</strong><small>{report.fileName} · Report date: {formatReportDate(report.reportDate)} · {report.reportKind === "handwritten" ? "extraction skipped · " : ""}Uploaded: {new Date(report.uploadedAt).toLocaleString()}</small></span><div className="saved-report-actions"><Button asChild size="sm"><a href={report.url} target="_blank" rel="noreferrer">Open <ExternalLink /></a></Button>{role !== "viewer" && <Button variant="destructive" size="sm" className="remove-staff-button" aria-label={`Delete ${report.fileName}`} onClick={() => setDeleteTarget({ type: "report", record: selectedRecord, report })}><Trash2 /> Delete</Button>}</div></div>)}</div> : <p className="no-report-copy">Use “Add reports” to attach the patient’s lab report images or PDFs.</p>}</section>
         <div className="record-dialog-actions">{role !== "viewer" && <Button variant="destructive" className="record-delete-button" onClick={() => setDeleteTarget({ type: "record", record: selectedRecord })}><Trash2 /> Delete patient record</Button>}{role !== "viewer" && <Button variant="outline" onClick={() => startEdit(selectedRecord)}><Pencil /> Edit patient details</Button>}{(role === "doctor" || role === "admin") && selectedRecord.status === "pending" && <Button onClick={() => verifyRecord(selectedRecord)} disabled={verifying}>{verifying ? <LoaderCircle className="spin" /> : <ClipboardCheck />} Verify record</Button>}</div>
       </>}
